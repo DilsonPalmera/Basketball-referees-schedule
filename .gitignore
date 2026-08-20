@@ -1,0 +1,49 @@
+# Entornos virtuales
+venv/
+.venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Variables de entorno
+.env
+.env.*
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Bases de datos locales
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos temporales
+*.tmp
+*.temp
+*.log
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Visual Studio Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# Archivos de Excel temporales
+~$*.xlsx
+~$*.xls
+
+# Archivos generados
+reports/
+outputs/
+exports/
