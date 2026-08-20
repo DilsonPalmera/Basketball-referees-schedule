@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 
-# ---------------------------------------------------------
-# CONFIGURACIÓN DE LA PÁGINA
-# ---------------------------------------------------------
+# =========================================================
+# CONFIGURACIÓN
+# =========================================================
 
 st.set_page_config(
     page_title="Asignador de Árbitros de Baloncesto",
@@ -11,130 +11,160 @@ st.set_page_config(
     layout="wide"
 )
 
-# ---------------------------------------------------------
-# ENCABEZADO
-# ---------------------------------------------------------
+# =========================================================
+# TÍTULO
+# =========================================================
 
 st.title("🏀 Asignador de Árbitros de Baloncesto")
 st.subheader("Sistema de gestión y programación de jornadas arbitrales")
 
-st.markdown("""
-Esta aplicación permitirá gestionar árbitros, jornadas y partidos,
-para posteriormente realizar asignaciones de manera organizada,
-equilibrada y eficiente.
-""")
+st.markdown(
+    """
+    Carga un dataset de árbitros, jornadas o partidos para comenzar
+    el proceso de análisis y asignación.
+    """
+)
 
 st.divider()
 
-# ---------------------------------------------------------
-# MENÚ LATERAL
-# ---------------------------------------------------------
+# =========================================================
+# CARGA DEL DATASET
+# =========================================================
 
-st.sidebar.title("⚙️ Menú principal")
+st.header("📂 Cargar dataset")
 
-opcion = st.sidebar.radio(
-    "Seleccione una opción:",
-    [
-        "Inicio",
-        "Árbitros",
-        "Jornadas",
-        "Partidos",
-        "Asignaciones"
-    ]
+archivo = st.file_uploader(
+    "Selecciona un archivo CSV o Excel",
+    type=["csv", "xlsx", "xls"],
+    help="Puedes cargar archivos en formato CSV o Excel."
 )
 
-# ---------------------------------------------------------
-# INICIO
-# ---------------------------------------------------------
+if archivo is not None:
 
-if opcion == "Inicio":
+    try:
 
-    st.header("📊 Panel principal")
+        # -------------------------------------------------
+        # LECTURA DEL ARCHIVO
+        # -------------------------------------------------
 
-    col1, col2, col3, col4 = st.columns(4)
+        if archivo.name.lower().endswith(".csv"):
 
-    with col1:
-        st.metric("Árbitros", "0")
+            try:
+                df = pd.read_csv(archivo)
 
-    with col2:
-        st.metric("Jornadas", "0")
+            except UnicodeDecodeError:
+                archivo.seek(0)
+                df = pd.read_csv(archivo, encoding="latin-1")
 
-    with col3:
-        st.metric("Partidos", "0")
+        else:
+            df = pd.read_excel(archivo)
 
-    with col4:
-        st.metric("Asignaciones", "0")
+        # -------------------------------------------------
+        # INFORMACIÓN DEL DATASET
+        # -------------------------------------------------
+
+        st.success(
+            f"✅ Archivo '{archivo.name}' cargado correctamente."
+        )
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Registros", f"{df.shape[0]:,}")
+
+        with col2:
+            st.metric("Columnas", df.shape[1])
+
+        with col3:
+            st.metric(
+                "Valores faltantes",
+                f"{df.isna().sum().sum():,}"
+            )
+
+        with col4:
+            st.metric(
+                "Duplicados",
+                f"{df.duplicated().sum():,}"
+            )
+
+        st.divider()
+
+        # -------------------------------------------------
+        # VISTA DEL DATASET
+        # -------------------------------------------------
+
+        st.subheader("👀 Vista previa")
+
+        st.dataframe(
+            df,
+            use_container_width=True,
+            height=400
+        )
+
+        # -------------------------------------------------
+        # INFORMACIÓN DE COLUMNAS
+        # -------------------------------------------------
+
+        st.subheader("📋 Información de las columnas")
+
+        informacion = pd.DataFrame({
+            "Columna": df.columns,
+            "Tipo de dato": df.dtypes.astype(str).values,
+            "Valores nulos": df.isna().sum().values,
+            "Valores únicos": [
+                df[col].nunique()
+                for col in df.columns
+            ]
+        })
+
+        st.dataframe(
+            informacion,
+            use_container_width=True
+        )
+
+        # -------------------------------------------------
+        # ESTADÍSTICAS
+        # -------------------------------------------------
+
+        st.subheader("📊 Estadísticas descriptivas")
+
+        st.dataframe(
+            df.describe(include="all").transpose(),
+            use_container_width=True
+        )
+
+        # -------------------------------------------------
+        # DESCARGAR DATASET
+        # -------------------------------------------------
+
+        st.subheader("💾 Descargar dataset")
+
+        csv = df.to_csv(
+            index=False
+        ).encode("utf-8")
+
+        st.download_button(
+            label="⬇️ Descargar CSV",
+            data=csv,
+            file_name="dataset_procesado.csv",
+            mime="text/csv"
+        )
+
+    except Exception as e:
+
+        st.error(
+            f"❌ No fue posible procesar el archivo: {e}"
+        )
+
+else:
 
     st.info(
-        "🚧 El sistema se encuentra en fase inicial de desarrollo. "
-        "En las siguientes versiones se incorporarán la gestión de "
-        "datos y el algoritmo de asignación."
+        "👆 Carga un archivo CSV o Excel para comenzar."
     )
 
-# ---------------------------------------------------------
-# ÁRBITROS
-# ---------------------------------------------------------
-
-elif opcion == "Árbitros":
-
-    st.header("👨‍⚖️ Gestión de Árbitros")
-
-    st.write(
-        "En este módulo se registrarán y administrarán los árbitros "
-        "disponibles para las jornadas."
-    )
-
-    st.warning("Módulo pendiente de implementación.")
-
-# ---------------------------------------------------------
-# JORNADAS
-# ---------------------------------------------------------
-
-elif opcion == "Jornadas":
-
-    st.header("📅 Gestión de Jornadas")
-
-    st.write(
-        "Aquí se podrán crear y administrar las jornadas de "
-        "competencia."
-    )
-
-    st.warning("Módulo pendiente de implementación.")
-
-# ---------------------------------------------------------
-# PARTIDOS
-# ---------------------------------------------------------
-
-elif opcion == "Partidos":
-
-    st.header("🏀 Gestión de Partidos")
-
-    st.write(
-        "Aquí se registrarán los partidos correspondientes a "
-        "cada jornada."
-    )
-
-    st.warning("Módulo pendiente de implementación.")
-
-# ---------------------------------------------------------
-# ASIGNACIONES
-# ---------------------------------------------------------
-
-elif opcion == "Asignaciones":
-
-    st.header("🎯 Asignación de Árbitros")
-
-    st.write(
-        "Este será el módulo principal del sistema. "
-        "Aquí se realizará la asignación de árbitros a los "
-        "diferentes partidos."
-    )
-
-    st.warning("Algoritmo de asignación pendiente de implementación.")
-
-# ---------------------------------------------------------
+# =========================================================
 # PIE DE PÁGINA
-# ---------------------------------------------------------
+# =========================================================
 
 st.divider()
 
