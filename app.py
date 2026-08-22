@@ -1,18 +1,22 @@
 # ============================================================
 # APP.PY
+# BASKETBALL REFEREES SCHEDULER
 # SISTEMA DE PROGRAMACIÓN Y ASIGNACIÓN DE ÁRBITROS
-# BALONCESTO
 # ============================================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import io
+import re
 import unicodedata
+from datetime import datetime, timedelta
 from collections import defaultdict
 
 # ============================================================
 # REPORTES
+# Los gráficos solo se generan cuando se crea el PDF.
+# No se renderizan permanentemente en la aplicación.
 # ============================================================
 
 import matplotlib.pyplot as plt
@@ -20,10 +24,7 @@ import matplotlib.pyplot as plt
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import (
-    getSampleStyleSheet,
-    ParagraphStyle
-)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
     SimpleDocTemplate,
@@ -48,30 +49,34 @@ st.set_page_config(
 
 # ============================================================
 # ESTILOS PROFESIONALES
+# IMPORTANTE:
+# Se utiliza CSS solamente para modificar componentes visuales.
+# Las tarjetas KPI se construyen con st.metric(), no con HTML.
 # ============================================================
 
 st.markdown(
     """
     <style>
 
-    /* ======================================================
+    /* ========================================================
        FONDO GENERAL
-       ====================================================== */
+       ======================================================== */
 
     .stApp {
-        background-color: #f3f5f7;
+        background-color: #f2f4f5;
     }
 
     .main {
-        background-color: #f3f5f7;
+        background-color: #f2f4f5;
     }
 
-    /* ======================================================
+    /* ========================================================
        SIDEBAR
-       ====================================================== */
+       ======================================================== */
 
     section[data-testid="stSidebar"] {
         background-color: #202b33;
+        border-right: 1px solid #17202a;
     }
 
     section[data-testid="stSidebar"] * {
@@ -79,150 +84,145 @@ st.markdown(
     }
 
     section[data-testid="stSidebar"] .stRadio > div {
-        gap: 3px;
+        gap: 4px;
     }
 
     section[data-testid="stSidebar"] label {
-        padding: 5px 8px !important;
-        margin: 0 !important;
-        border-radius: 6px;
         font-size: 13px;
     }
 
-    section[data-testid="stSidebar"] label:hover {
-        background-color: #34495e;
-    }
+    /* ========================================================
+       TÍTULOS
+       ======================================================== */
 
-    /* ======================================================
-       ENCABEZADO NATIVO
-       ====================================================== */
-
-    .app-header-line {
-        height: 5px;
-        background: linear-gradient(
-            90deg,
-            #17202a,
-            #273746,
-            #34495e
-        );
-        border-radius: 0 0 8px 8px;
-        margin-bottom: 15px;
-    }
-
-    /* ======================================================
-       KPI
-       ====================================================== */
-
-    .kpi-card {
-        background: #ffffff;
-        border-radius: 10px;
-        padding: 14px;
-        border: 1px solid #dfe4e8;
-        box-shadow: 0 2px 7px rgba(0,0,0,0.05);
-        min-height: 85px;
-    }
-
-    .kpi-title {
-        font-size: 12px;
-        color: #7b8794;
-        margin-bottom: 5px;
-    }
-
-    .kpi-value {
-        font-size: 25px;
-        font-weight: 700;
+    h1, h2, h3 {
         color: #17202a;
     }
 
-    /* ======================================================
+    /* ========================================================
+       HEADER NATIVO
+       ======================================================== */
+
+    .app-title {
+        font-size: 30px;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 2px;
+    }
+
+    .app-subtitle {
+        font-size: 14px;
+        color: #d5d8dc;
+        margin-top: 0;
+    }
+
+    /* ========================================================
+       CONTENEDOR DE HEADER
+       ======================================================== */
+
+    div[data-testid="stVerticalBlock"] .header-box {
+        background: linear-gradient(
+            135deg,
+            #17202a 0%,
+            #273746 100%
+        );
+        border-radius: 12px;
+        padding: 20px 24px;
+        margin-bottom: 18px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+    }
+
+    /* ========================================================
+       MÉTRICAS / KPI
+       ======================================================== */
+
+    div[data-testid="metric-container"] {
+        background-color: #ffffff;
+        border: 1px solid #dfe4e8;
+        border-radius: 10px;
+        padding: 14px 16px;
+        box-shadow: 0 2px 7px rgba(0,0,0,0.05);
+        min-height: 95px;
+    }
+
+    div[data-testid="metric-container"] label {
+        color: #7b8794 !important;
+        font-size: 12px !important;
+    }
+
+    div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+        color: #17202a !important;
+        font-size: 25px !important;
+        font-weight: 700 !important;
+    }
+
+    /* ========================================================
        SECCIONES
-       ====================================================== */
+       ======================================================== */
 
     .section-title {
         background-color: #273746;
-        color: white;
+        color: #ffffff;
         padding: 9px 13px;
         border-radius: 7px;
         font-weight: 600;
-        margin: 15px 0 10px 0;
+        margin: 15px 0 12px 0;
     }
 
-    /* ======================================================
-       ALERTAS
-       ====================================================== */
-
-    .alert-critical {
-        background-color: #fdecea;
-        border-left: 5px solid #c0392b;
-        padding: 10px 13px;
-        margin-bottom: 7px;
-        border-radius: 5px;
-        color: #7b241c;
-    }
-
-    .alert-medium {
-        background-color: #fef9e7;
-        border-left: 5px solid #f1c40f;
-        padding: 10px 13px;
-        margin-bottom: 7px;
-        border-radius: 5px;
-        color: #7d6608;
-    }
-
-    .alert-low {
-        background-color: #eafaf1;
-        border-left: 5px solid #27ae60;
-        padding: 10px 13px;
-        margin-bottom: 7px;
-        border-radius: 5px;
-        color: #196f3d;
-    }
-
-    /* ======================================================
+    /* ========================================================
        BOTONES
-       ====================================================== */
+       ======================================================== */
 
     .stDownloadButton button {
         background-color: #273746 !important;
-        color: white !important;
+        color: #ffffff !important;
         border: none !important;
         border-radius: 6px !important;
+        font-weight: 600 !important;
     }
 
     .stDownloadButton button:hover {
         background-color: #34495e !important;
     }
 
-    /* ======================================================
+    /* ========================================================
        FILE UPLOADER
-       ====================================================== */
+       ======================================================== */
 
     section[data-testid="stFileUploaderDropzone"] {
-        background-color: white;
+        background-color: #ffffff;
         border: 1px dashed #7f8c8d;
         border-radius: 8px;
     }
 
-    section[data-testid="stFileUploaderDropzone"] button {
-        background-color: #273746 !important;
-        color: white !important;
-    }
-
-    /* ======================================================
+    /* ========================================================
        DATAFRAME
-       ====================================================== */
+       ======================================================== */
 
     [data-testid="stDataFrame"] {
         border-radius: 7px;
         overflow: hidden;
     }
 
-    /* ======================================================
-       TÍTULOS NATIVOS
-       ====================================================== */
+    /* ========================================================
+       ALERTAS NATIVAS
+       ======================================================== */
 
-    h1, h2, h3 {
-        color: #17202a !important;
+    div[data-testid="stAlert"] {
+        border-radius: 8px;
+    }
+
+    /* ========================================================
+       PIE
+       ======================================================== */
+
+    .footer-text {
+        margin-top: 30px;
+        padding: 12px;
+        text-align: center;
+        color: #7f8c8d;
+        font-size: 11px;
+        border-top: 1px solid #dfe4e8;
     }
 
     </style>
@@ -276,25 +276,13 @@ def categoria_numero(categoria):
 
     texto = limpiar_texto(categoria)
 
-    if (
-        "1ra" in texto
-        or "primera" in texto
-        or "1era" in texto
-    ):
+    if "1ra" in texto or "primera" in texto:
         return 3
 
-    if (
-        "2da" in texto
-        or "segunda" in texto
-        or "2da" in texto
-    ):
+    if "2da" in texto or "segunda" in texto:
         return 2
 
-    if (
-        "3ra" in texto
-        or "tercera" in texto
-        or "3era" in texto
-    ):
+    if "3ra" in texto or "tercera" in texto:
         return 1
 
     return 0
@@ -349,10 +337,12 @@ def convertir_fecha(valor):
 
     try:
 
-        return pd.to_datetime(
+        resultado = pd.to_datetime(
             valor,
             errors="coerce"
         )
+
+        return resultado
 
     except Exception:
 
@@ -387,7 +377,9 @@ def hora_a_minutos(valor):
                 + minutos
             )
 
-        return int(float(texto))
+        return int(
+            float(texto)
+        )
 
     except Exception:
 
@@ -408,28 +400,34 @@ def hora_a_minutos(valor):
 
 
 # ============================================================
-# DÍAS DE LA SEMANA
-# CORRECCIÓN: NO UTILIZA locale="es_ES"
+# DÍA DE LA SEMANA
+#
+# IMPORTANTE:
+# No se utiliza:
+# day_name(locale="es_ES")
+#
+# Esto evita:
+# "Error: unsupported locale setting"
 # ============================================================
 
-DIAS_SEMANA = {
+DIAS_ES = {
     0: "lunes",
     1: "martes",
-    2: "miercoles",
+    2: "miércoles",
     3: "jueves",
     4: "viernes",
-    5: "sabado",
+    5: "sábado",
     6: "domingo"
 }
 
 
-def obtener_dia_semana_es(fecha):
+def obtener_dia_es(fecha):
 
     try:
 
         fecha = pd.Timestamp(fecha)
 
-        return DIAS_SEMANA.get(
+        return DIAS_ES.get(
             fecha.weekday(),
             ""
         )
@@ -458,37 +456,28 @@ def intervalo_disponible(
 
     try:
 
-        fecha_timestamp = pd.Timestamp(
-            fecha
-        )
-
         fecha_normalizada = (
-            fecha_timestamp.date()
-        )
-
-        dia_semana = obtener_dia_semana_es(
-            fecha_timestamp
-        )
-
-        dia_semana_ingles = (
-            fecha_timestamp.day_name().lower()
+            pd.Timestamp(fecha).date()
         )
 
     except Exception:
 
         return False
 
+    dia_semana = obtener_dia_es(
+        fecha
+    )
+
     for _, fila in disponibilidad.iterrows():
 
-        dia = fila.get("dia")
-
-        if pd.isna(dia):
-            continue
+        dia = fila.get(
+            "dia"
+        )
 
         fecha_disp = None
 
         # ----------------------------------------------------
-        # INTENTAR FECHA EXACTA
+        # Intentar interpretar como fecha
         # ----------------------------------------------------
 
         try:
@@ -498,7 +487,7 @@ def intervalo_disponible(
                 errors="coerce"
             )
 
-            if not pd.isna(
+            if pd.notna(
                 fecha_convertida
             ):
 
@@ -511,62 +500,48 @@ def intervalo_disponible(
             fecha_disp = None
 
         # ----------------------------------------------------
-        # SI NO ES FECHA, COMPARAR DÍA
+        # Si no es fecha, comparar día de semana
         # ----------------------------------------------------
 
         if fecha_disp is None:
 
-            dia_limpio = limpiar_texto(
+            dia_texto = limpiar_texto(
                 dia
             )
 
-            equivalencias = {
+            if dia_texto == limpiar_texto(
+                dia_semana
+            ):
 
-                "lunes": "lunes",
-                "monday": "lunes",
+                fecha_disp = (
+                    fecha_normalizada
+                )
 
-                "martes": "martes",
-                "tuesday": "martes",
+            else:
 
-                "miercoles": "miercoles",
-                "wednesday": "miercoles",
-
-                "jueves": "jueves",
-                "thursday": "jueves",
-
-                "viernes": "viernes",
-                "friday": "viernes",
-
-                "sabado": "sabado",
-                "saturday": "sabado",
-
-                "domingo": "domingo",
-                "sunday": "domingo"
-            }
-
-            dia_normalizado = equivalencias.get(
-                dia_limpio,
-                dia_limpio
-            )
-
-            if dia_normalizado != dia_semana:
-                continue
-
-        else:
-
-            if fecha_disp != fecha_normalizada:
                 continue
 
         # ----------------------------------------------------
-        # HORARIOS
+        # Validar fecha
+        # ----------------------------------------------------
+
+        if fecha_disp != fecha_normalizada:
+            continue
+
+        # ----------------------------------------------------
+        # Horarios
         # ----------------------------------------------------
 
         inicio_disp = hora_a_minutos(
-            fila.get("hora_inicio")
+            fila.get(
+                "hora_inicio"
+            )
         )
 
         fin_disp = hora_a_minutos(
-            fila.get("hora_fin")
+            fila.get(
+                "hora_fin"
+            )
         )
 
         if (
@@ -585,7 +560,9 @@ def intervalo_disponible(
 # PREPARAR PARTIDOS
 # ============================================================
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(
+    show_spinner=False
+)
 def preparar_partidos(datos):
 
     partidos = datos[
@@ -595,40 +572,54 @@ def preparar_partidos(datos):
     if partidos.empty:
         return partidos
 
-    partidos["fecha_dt"] = partidos[
-        "fecha"
-    ].apply(convertir_fecha)
+    partidos["fecha_dt"] = (
+        partidos[
+            "fecha"
+        ].apply(
+            convertir_fecha
+        )
+    )
 
-    partidos["inicio_min"] = partidos[
-        "hora_inicio"
-    ].apply(hora_a_minutos)
+    partidos["inicio_min"] = (
+        partidos[
+            "hora_inicio"
+        ].apply(
+            hora_a_minutos
+        )
+    )
 
-    partidos["fin_min"] = partidos[
-        "hora_fin"
-    ].apply(hora_a_minutos)
+    partidos["fin_min"] = (
+        partidos[
+            "hora_fin"
+        ].apply(
+            hora_a_minutos
+        )
+    )
 
     partidos = partidos[
-        partidos["fecha_dt"].notna()
+        partidos[
+            "fecha_dt"
+        ].notna()
     ].copy()
 
     columnas_orden = [
         "fecha_dt",
-        "inicio_min"
+        "inicio_min",
+        "escenario",
+        "id_partido"
     ]
 
-    if "escenario" in partidos.columns:
-        columnas_orden.append(
-            "escenario"
-        )
+    columnas_orden = [
+        c
+        for c in columnas_orden
+        if c in partidos.columns
+    ]
 
-    if "id_partido" in partidos.columns:
-        columnas_orden.append(
-            "id_partido"
-        )
+    if columnas_orden:
 
-    partidos = partidos.sort_values(
-        by=columnas_orden
-    )
+        partidos = partidos.sort_values(
+            by=columnas_orden
+        )
 
     return partidos.reset_index(
         drop=True
@@ -636,7 +627,7 @@ def preparar_partidos(datos):
 
 
 # ============================================================
-# REGISTRO DE ASIGNACIÓN
+# CREAR REGISTRO
 # ============================================================
 
 def crear_registro_asignacion(
@@ -651,43 +642,69 @@ def crear_registro_asignacion(
     return {
 
         "id_partido":
-            partido.get("id_partido"),
+            partido.get(
+                "id_partido"
+            ),
 
         "fecha":
-            partido.get("fecha"),
+            partido.get(
+                "fecha"
+            ),
 
         "dia":
-            partido.get("dia"),
+            partido.get(
+                "dia"
+            ),
 
         "hora_inicio":
-            partido.get("hora_inicio"),
+            partido.get(
+                "hora_inicio"
+            ),
 
         "hora_fin":
-            partido.get("hora_fin"),
+            partido.get(
+                "hora_fin"
+            ),
 
         "evento":
-            partido.get("evento"),
+            partido.get(
+                "evento"
+            ),
 
         "escenario":
-            partido.get("escenario"),
+            partido.get(
+                "escenario"
+            ),
 
         "rama":
-            partido.get("rama"),
+            partido.get(
+                "rama"
+            ),
 
         "categoria_partido":
-            partido.get("categoria"),
+            partido.get(
+                "categoria"
+            ),
 
         "id_arbitro":
-            arb.get("id_arbitro"),
+            arb.get(
+                "id_arbitro"
+            ),
 
         "nombre_completo":
-            arb.get("nombre_completo"),
+            arb.get(
+                "nombre_completo"
+            ),
 
         "documento_identidad":
-            arb.get("documento_identidad"),
+            arb.get(
+                "documento_identidad"
+            ),
 
         "rol_arbitral":
-            arb.get("rol_arbitral"),
+            arb.get(
+                "rol_arbitral"
+            ),
 
         "funcion_asignada":
             funcion,
@@ -709,7 +726,9 @@ def crear_registro_asignacion(
 # MOTOR DE ASIGNACIÓN
 # ============================================================
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(
+    show_spinner=False
+)
 def ejecutar_asignacion(datos):
 
     arbitros = datos[
@@ -725,6 +744,7 @@ def ejecutar_asignacion(datos):
     )
 
     asignaciones = []
+
     alertas = []
 
     if (
@@ -749,21 +769,28 @@ def ejecutar_asignacion(datos):
         in disponibilidad.groupby(
             "id_arbitro"
         )
+
     }
 
     # --------------------------------------------------------
-    # ESTADO
+    # ESTADO DE CARGA
     # --------------------------------------------------------
 
-    carga_dia = defaultdict(int)
+    carga_dia = defaultdict(
+        int
+    )
 
-    carga_semana = defaultdict(int)
+    carga_semana = defaultdict(
+        int
+    )
 
-    historial = defaultdict(list)
+    historial = defaultdict(
+        list
+    )
 
-    # --------------------------------------------------------
+    # ========================================================
     # CANDIDATOS
-    # --------------------------------------------------------
+    # ========================================================
 
     def candidatos(
         partido,
@@ -793,6 +820,12 @@ def ejecutar_asignacion(datos):
 
             return resultado
 
+        fecha_clave = fecha.date()
+
+        # ----------------------------------------------------
+        # Iterar árbitros
+        # ----------------------------------------------------
+
         for _, arb in arbitros.iterrows():
 
             aid = arb.get(
@@ -805,7 +838,7 @@ def ejecutar_asignacion(datos):
             )
 
             # ------------------------------------------------
-            # FUNCIÓN
+            # Categoría y función
             # ------------------------------------------------
 
             if funcion == "CAMPO":
@@ -834,7 +867,7 @@ def ejecutar_asignacion(datos):
                 continue
 
             # ------------------------------------------------
-            # CATEGORÍA
+            # Categoría
             # ------------------------------------------------
 
             if not categoria_superior_o_igual(
@@ -845,7 +878,7 @@ def ejecutar_asignacion(datos):
                 continue
 
             # ------------------------------------------------
-            # DISPONIBILIDAD
+            # Disponibilidad
             # ------------------------------------------------
 
             disp = (
@@ -865,7 +898,7 @@ def ejecutar_asignacion(datos):
                 continue
 
             # ------------------------------------------------
-            # CONFLICTOS
+            # Conflictos
             # ------------------------------------------------
 
             conflicto = False
@@ -884,7 +917,10 @@ def ejecutar_asignacion(datos):
 
                     continue
 
+                # --------------------------------------------
                 # Solapamiento
+                # --------------------------------------------
+
                 if (
                     inicio < anterior["fin"]
                     and
@@ -892,9 +928,13 @@ def ejecutar_asignacion(datos):
                 ):
 
                     conflicto = True
+
                     break
 
+                # --------------------------------------------
                 # Partidos consecutivos
+                # --------------------------------------------
+
                 if (
                     anterior["fin"]
                     == inicio
@@ -911,30 +951,35 @@ def ejecutar_asignacion(datos):
                         ==
 
                         limpiar_texto(
-                            partido[
+                            partido.get(
                                 "escenario"
-                            ]
+                            )
                         )
                     )
 
                     if not mismo_escenario:
 
                         conflicto = True
+
                         break
 
-                    # No puede tener campo
-                    # y mesa en el mismo partido
+                    # ----------------------------------------
+                    # No puede hacer campo y mesa
+                    # en el mismo partido
+                    # ----------------------------------------
+
                     if (
                         anterior[
                             "id_partido"
                         ]
                         ==
-                        partido[
+                        partido.get(
                             "id_partido"
-                        ]
+                        )
                     ):
 
                         conflicto = True
+
                         break
 
             if conflicto:
@@ -944,18 +989,20 @@ def ejecutar_asignacion(datos):
             # CARGA
             # ------------------------------------------------
 
-            clave_dia = (
-                aid,
-                fecha.date()
-            )
-
             campos_dia = carga_dia[
-                clave_dia
+                (
+                    aid,
+                    fecha_clave
+                )
             ]
 
             campos_semana = carga_semana[
                 aid
             ]
+
+            # ------------------------------------------------
+            # Máximo semanal
+            # ------------------------------------------------
 
             if (
                 funcion == "CAMPO"
@@ -967,8 +1014,11 @@ def ejecutar_asignacion(datos):
                 continue
 
             exceso_diario = (
+
                 funcion == "CAMPO"
+
                 and
+
                 campos_dia
                 >= MAX_CAMPO_DIA
             )
@@ -1013,33 +1063,33 @@ def ejecutar_asignacion(datos):
 
                 puntuacion += 1000
 
-            # Híbridos penalizados
+            # Híbrido
             if es_hibrido(rol):
 
                 puntuacion += 5
 
             resultado.append({
 
-                "arbitro": arb,
+                "arbitro":
+                    arb,
 
                 "puntuacion":
                     puntuacion,
 
                 "exceso_diario":
                     exceso_diario
-
             })
 
         resultado.sort(
             key=lambda x:
-                x["puntuacion"]
+            x["puntuacion"]
         )
 
         return resultado
 
-    # --------------------------------------------------------
+    # ========================================================
     # ASIGNAR FUNCIÓN
-    # --------------------------------------------------------
+    # ========================================================
 
     def asignar_funcion(
         partido,
@@ -1060,7 +1110,7 @@ def ejecutar_asignacion(datos):
             )
 
             # ------------------------------------------------
-            # SIN CANDIDATO
+            # SIN CANDIDATOS
             # ------------------------------------------------
 
             if not candidatos_disponibles:
@@ -1079,8 +1129,8 @@ def ejecutar_asignacion(datos):
 
                     "hora":
                         (
-                            f"{partido.get('hora_inicio')} "
-                            f"- "
+                            f"{partido.get('hora_inicio')}"
+                            f" - "
                             f"{partido.get('hora_fin')}"
                         ),
 
@@ -1105,9 +1155,11 @@ def ejecutar_asignacion(datos):
 
                     "mensaje":
                         (
-                            f"No existe personal disponible "
-                            f"para {funcion.lower()} con "
-                            f"categoría {categoria_req}."
+                            "No existe personal "
+                            "disponible para "
+                            f"{funcion.lower()} "
+                            "con categoría "
+                            f"{categoria_req}."
                         )
                 })
 
@@ -1129,20 +1181,21 @@ def ejecutar_asignacion(datos):
                 "id_arbitro"
             )
 
-            categoria_utilizada = (
+            if funcion == "CAMPO":
 
-                arb.get(
-                    "categoria_campo"
+                categoria_utilizada = (
+                    arb.get(
+                        "categoria_campo"
+                    )
                 )
 
-                if funcion == "CAMPO"
+            else:
 
-                else
-
-                arb.get(
-                    "categoria_mesa"
+                categoria_utilizada = (
+                    arb.get(
+                        "categoria_mesa"
+                    )
                 )
-            )
 
             sustitucion = (
 
@@ -1232,16 +1285,15 @@ def ejecutar_asignacion(datos):
                     aid
                 ] += 1
 
-                # ------------------------------------------------
-                # ALERTA DE EXCESO DIARIO
-                # ------------------------------------------------
+                # --------------------------------------------
+                # Alerta por carga
+                # --------------------------------------------
 
                 if (
                     carga_dia[
                         clave_dia
                     ]
-                    >
-                    MAX_CAMPO_DIA
+                    > MAX_CAMPO_DIA
                 ):
 
                     alertas.append({
@@ -1258,8 +1310,8 @@ def ejecutar_asignacion(datos):
 
                         "hora":
                             (
-                                f"{partido.get('hora_inicio')} "
-                                f"- "
+                                f"{partido.get('hora_inicio')}"
+                                f" - "
                                 f"{partido.get('hora_fin')}"
                             ),
 
@@ -1286,9 +1338,11 @@ def ejecutar_asignacion(datos):
                             (
                                 f"El árbitro "
                                 f"{arb.get('nombre_completo')} "
-                                f"supera la carga recomendada "
-                                f"de {MAX_CAMPO_DIA} partidos "
-                                f"de campo en el día."
+                                f"supera la carga "
+                                f"recomendada de "
+                                f"{MAX_CAMPO_DIA} "
+                                "partidos de campo "
+                                "en el día."
                             )
                     })
 
@@ -1424,21 +1478,13 @@ def ejecutar_asignacion(datos):
             registros_mesa
         )
 
-    # ========================================================
-    # RESULTADOS
-    # ========================================================
-
-    df_asignaciones = pd.DataFrame(
-        asignaciones
-    )
-
-    df_alertas = pd.DataFrame(
-        alertas
-    )
-
     return (
-        df_asignaciones,
-        df_alertas
+        pd.DataFrame(
+            asignaciones
+        ),
+        pd.DataFrame(
+            alertas
+        )
     )
 
 
@@ -1446,7 +1492,9 @@ def ejecutar_asignacion(datos):
 # CARGAR EXCEL
 # ============================================================
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(
+    show_spinner=False
+)
 def cargar_excel_archivo(
     archivo
 ):
@@ -1474,11 +1522,12 @@ def cargar_excel_archivo(
 
         raise ValueError(
             "Faltan las siguientes hojas: "
-            +
-            ", ".join(faltantes)
+            + ", ".join(
+                faltantes
+            )
         )
 
-    datos = {
+    return {
 
         "arbitros":
             pd.read_excel(
@@ -1504,8 +1553,6 @@ def cargar_excel_archivo(
                 sheet_name="Programacion_Partidos"
             )
     }
-
-    return datos
 
 
 # ============================================================
@@ -1582,22 +1629,21 @@ def generar_excel(
 
 def generar_csv(df):
 
-    return (
-        df.to_csv(
-            index=False,
-            encoding="utf-8-sig"
-        )
-        .encode(
-            "utf-8-sig"
-        )
+    return df.to_csv(
+        index=False,
+        encoding="utf-8-sig"
+    ).encode(
+        "utf-8-sig"
     )
 
 
 # ============================================================
-# GRÁFICO PROFESIONAL PARA PDF
+# GRÁFICOS PARA PDF
 # ============================================================
 
-def grafico_alertas(alertas):
+def grafico_alertas(
+    alertas
+):
 
     fig, ax = plt.subplots(
         figsize=(8, 4.5)
@@ -1646,10 +1692,6 @@ def grafico_alertas(alertas):
 
     return fig
 
-
-# ============================================================
-# GRÁFICO FUNCIONES
-# ============================================================
 
 def grafico_funciones(
     asignaciones
@@ -1703,10 +1745,6 @@ def grafico_funciones(
     return fig
 
 
-# ============================================================
-# GRÁFICO DE CARGA
-# ============================================================
-
 def grafico_carga(
     asignaciones
 ):
@@ -1729,6 +1767,15 @@ def grafico_carga(
 
         return fig
 
+    if (
+        "funcion_asignada"
+        not in asignaciones.columns
+    ):
+
+        ax.axis("off")
+
+        return fig
+
     campo = asignaciones[
         asignaciones[
             "funcion_asignada"
@@ -1740,7 +1787,9 @@ def grafico_carga(
         ax.text(
             0.5,
             0.5,
-            "No existen asignaciones de campo"
+            "No existen asignaciones de campo",
+            ha="center",
+            va="center"
         )
 
         ax.axis("off")
@@ -1779,7 +1828,7 @@ def grafico_carga(
 
 
 # ============================================================
-# PDF
+# PDF EJECUTIVO
 # ============================================================
 
 def generar_pdf_resumen(
@@ -1802,7 +1851,7 @@ def generar_pdf_resumen(
     styles = getSampleStyleSheet()
 
     titulo = ParagraphStyle(
-        "Titulo",
+        "TituloInforme",
         parent=styles["Title"],
         alignment=TA_CENTER,
         fontSize=20,
@@ -1810,7 +1859,7 @@ def generar_pdf_resumen(
     )
 
     subtitulo = ParagraphStyle(
-        "Subtitulo",
+        "SubtituloInforme",
         parent=styles["Heading2"],
         fontSize=13,
         textColor=colors.HexColor(
@@ -1821,7 +1870,7 @@ def generar_pdf_resumen(
     )
 
     normal = ParagraphStyle(
-        "NormalCustom",
+        "NormalInforme",
         parent=styles["BodyText"],
         fontSize=9,
         leading=12
@@ -1838,8 +1887,8 @@ def generar_pdf_resumen(
 
     elementos.append(
         Paragraph(
-            "Sistema de Programación de Árbitros "
-            "de Baloncesto",
+            "Sistema de Programación de "
+            "Árbitros de Baloncesto",
             subtitulo
         )
     )
@@ -1955,7 +2004,10 @@ def generar_pdf_resumen(
     )
 
     elementos.append(
-        Spacer(1, 10)
+        Spacer(
+            1,
+            10
+        )
     )
 
     # ========================================================
@@ -1975,7 +2027,9 @@ def generar_pdf_resumen(
         bbox_inches="tight"
     )
 
-    plt.close(fig1)
+    plt.close(
+        fig1
+    )
 
     imagen1.seek(0)
 
@@ -2006,8 +2060,8 @@ def generar_pdf_resumen(
 
         elementos.append(
             Paragraph(
-                "No se generaron alertas durante "
-                "el proceso de asignación.",
+                "No se generaron alertas "
+                "durante el proceso de asignación.",
                 normal
             )
         )
@@ -2228,19 +2282,24 @@ def generar_pdf_resumen(
                 for c in disponibles
             ])
 
+        anchos = [
+
+            2 * cm,
+            1.5 * cm,
+            1.5 * cm,
+            3.2 * cm,
+            3 * cm,
+            2.2 * cm,
+            4 * cm,
+            2.2 * cm
+        ]
+
         tabla = Table(
             tabla_prog,
             repeatRows=1,
-            colWidths=[
-                2 * cm,
-                1.5 * cm,
-                1.5 * cm,
-                3.2 * cm,
-                3 * cm,
-                2.2 * cm,
-                4 * cm,
-                2.2 * cm
-            ][:len(disponibles)]
+            colWidths=anchos[
+                :len(disponibles)
+            ]
         )
 
         tabla.setStyle(
@@ -2298,19 +2357,20 @@ def generar_pdf_resumen(
 
 
 # ============================================================
-# GRÁFICOS SIMPLES DE LA APP
+# GRÁFICOS SENCILLOS EN APP
+#
+# No utiliza matplotlib.
+# No utiliza HTML.
+# Son componentes nativos de Streamlit.
 # ============================================================
 
-def grafico_simple_barras(
+def mostrar_barras_simples(
     serie,
     titulo,
     max_items=8
 ):
 
-    if (
-        serie is None
-        or len(serie) == 0
-    ):
+    if serie is None or len(serie) == 0:
 
         st.caption(
             "Sin datos para mostrar."
@@ -2320,102 +2380,48 @@ def grafico_simple_barras(
 
     serie = (
         serie
-        .head(max_items)
-        .sort_values()
-    )
-
-    max_valor = max(
-        float(serie.max()),
-        1
+        .sort_values(
+            ascending=False
+        )
+        .head(
+            max_items
+        )
+        .sort_values(
+            ascending=True
+        )
     )
 
     st.markdown(
-        f"""
-        <div style="
-            font-size:14px;
-            font-weight:600;
-            color:#273746;
-            margin-bottom:8px;
-        ">
-            {titulo}
-        </div>
-        """,
-        unsafe_allow_html=True
+        f"**{titulo}**"
     )
 
-    for etiqueta, valor in serie.items():
-
-        porcentaje = (
-            float(valor)
-            /
-            max_valor
-            *
-            100
-        )
-
-        st.markdown(
-            f"""
-            <div style="
-                margin-bottom:6px;
-                font-size:11px;
-                color:#333333;
-            ">
-
-                <div style="
-                    display:flex;
-                    justify-content:space-between;
-                ">
-
-                    <span>
-                        {etiqueta}
-                    </span>
-
-                    <b>
-                        {int(valor)}
-                    </b>
-
-                </div>
-
-                <div style="
-                    background:#d9dde0;
-                    height:7px;
-                    border-radius:4px;
-                    margin-top:2px;
-                ">
-
-                    <div style="
-                        background:#273746;
-                        width:{porcentaje:.1f}%;
-                        height:7px;
-                        border-radius:4px;
-                    ">
-                    </div>
-
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    st.bar_chart(
+        serie,
+        use_container_width=True
+    )
 
 
 # ============================================================
-# PORTADA
-# CORREGIDA: NO USA HTML PARA EL TÍTULO
+# HEADER
+#
+# IMPORTANTE:
+# Se usa HTML únicamente en este bloque visual.
+# Los KPI y tarjetas NO usan HTML.
 # ============================================================
 
 st.markdown(
-    '<div class="app-header-line"></div>',
+    """
+    <div class="header-box">
+        <div class="app-title">
+            🏀 Basketball Referees Scheduler
+        </div>
+        <div class="app-subtitle">
+            Sistema inteligente de programación,
+            asignación y control de árbitros.
+        </div>
+    </div>
+    """,
     unsafe_allow_html=True
-)
-
-st.title(
-    "🏀 Basketball Referees Scheduler"
-)
-
-st.caption(
-    "Sistema inteligente de programación, "
-    "asignación y control de árbitros."
 )
 
 # ============================================================
@@ -2437,7 +2443,7 @@ with st.sidebar:
         key="excel_upload"
     )
 
-    st.markdown("---")
+    st.divider()
 
     modulo = st.radio(
         "Módulos",
@@ -2452,7 +2458,7 @@ with st.sidebar:
         index=0
     )
 
-    st.markdown("---")
+    st.divider()
 
     st.caption(
         "Sistema de asignación automática"
@@ -2464,7 +2470,7 @@ with st.sidebar:
 
 
 # ============================================================
-# VALIDAR ARCHIVO
+# SIN ARCHIVO
 # ============================================================
 
 if archivo is None:
@@ -2475,27 +2481,19 @@ if archivo is None:
         "el procesamiento automático."
     )
 
-    st.markdown(
-        "### Estructura esperada"
+    st.subheader(
+        "Estructura esperada"
     )
 
     st.write(
         "El archivo debe contener las hojas:"
     )
 
-    st.markdown(
-        """
-        - `Arbitros`
-        - `Disponibilidad_Arbitros`
-        - `Config_Eventos`
-        - `Programacion_Partidos`
-        """
-    )
-
-    st.markdown(
-        "**Flujo:** "
-        "Carga → Validación → Cruce → "
-        "Asignación → Alertas → Informes"
+    st.write(
+        "- `Arbitros`\n"
+        "- `Disponibilidad_Arbitros`\n"
+        "- `Config_Eventos`\n"
+        "- `Programacion_Partidos`"
     )
 
     st.stop()
@@ -2515,11 +2513,10 @@ try:
             archivo
         )
 
-        (
-            asignaciones,
-            alertas
-        ) = ejecutar_asignacion(
-            datos
+        asignaciones, alertas = (
+            ejecutar_asignacion(
+                datos
+            )
         )
 
 except Exception as error:
@@ -2561,27 +2558,28 @@ total_alertas = len(
 )
 
 alertas_criticas = 0
+
 alertas_medias = 0
 
 if not alertas.empty:
 
-    alertas_criticas = len(
-        alertas[
-            alertas[
-                "severidad"
-            ]
-            == "CRÍTICA"
-        ]
-    )
+    if "severidad" in alertas.columns:
 
-    alertas_medias = len(
-        alertas[
+        alertas_criticas = len(
             alertas[
-                "severidad"
+                alertas[
+                    "severidad"
+                ] == "CRÍTICA"
             ]
-            == "MEDIA"
-        ]
-    )
+        )
+
+        alertas_medias = len(
+            alertas[
+                alertas[
+                    "severidad"
+                ] == "MEDIA"
+            ]
+        )
 
 
 # ============================================================
@@ -2597,118 +2595,66 @@ if modulo == "📊 Resumen":
         unsafe_allow_html=True
     )
 
+    # ========================================================
+    # KPI NATIVOS
+    #
+    # NO SE UTILIZA HTML.
+    # ========================================================
+
     c1, c2, c3, c4, c5 = st.columns(5)
 
     with c1:
 
-        st.markdown(
-            f"""
-            <div class="kpi-card">
-
-                <div class="kpi-title">
-                    Árbitros
-                </div>
-
-                <div class="kpi-value">
-                    {total_arbitros}
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True
+        st.metric(
+            label="Árbitros",
+            value=total_arbitros
         )
 
     with c2:
 
-        st.markdown(
-            f"""
-            <div class="kpi-card">
-
-                <div class="kpi-title">
-                    Partidos
-                </div>
-
-                <div class="kpi-value">
-                    {total_partidos}
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True
+        st.metric(
+            label="Partidos",
+            value=total_partidos
         )
 
     with c3:
 
-        st.markdown(
-            f"""
-            <div class="kpi-card">
-
-                <div class="kpi-title">
-                    Asignaciones
-                </div>
-
-                <div class="kpi-value">
-                    {total_asignaciones}
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True
+        st.metric(
+            label="Asignaciones",
+            value=total_asignaciones
         )
 
     with c4:
 
-        st.markdown(
-            f"""
-            <div class="kpi-card">
-
-                <div class="kpi-title">
-                    Alertas críticas
-                </div>
-
-                <div class="kpi-value">
-                    {alertas_criticas}
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True
+        st.metric(
+            label="Alertas críticas",
+            value=alertas_criticas
         )
 
     with c5:
 
-        st.markdown(
-            f"""
-            <div class="kpi-card">
-
-                <div class="kpi-title">
-                    Alertas medias
-                </div>
-
-                <div class="kpi-value">
-                    {alertas_medias}
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True
+        st.metric(
+            label="Alertas medias",
+            value=alertas_medias
         )
 
-    st.markdown(
-        "### Estado general"
+    st.subheader(
+        "Estado general"
     )
 
     if total_alertas == 0:
 
         st.success(
-            "🟢 Programación generada sin alertas."
+            "🟢 Programación generada "
+            "sin alertas."
         )
 
     elif alertas_criticas > 0:
 
         st.error(
             f"🔴 Existen {alertas_criticas} "
-            "alertas críticas que requieren revisión."
+            "alertas críticas que requieren "
+            "revisión."
         )
 
     else:
@@ -2719,7 +2665,7 @@ if modulo == "📊 Resumen":
         )
 
     # ========================================================
-    # GRÁFICOS SIMPLES
+    # GRÁFICOS NATIVOS LIGEROS
     # ========================================================
 
     col1, col2 = st.columns(2)
@@ -2735,9 +2681,15 @@ if modulo == "📊 Resumen":
                 .value_counts()
             )
 
-            grafico_simple_barras(
+            mostrar_barras_simples(
                 serie,
                 "Asignaciones por función"
+            )
+
+        else:
+
+            st.caption(
+                "Sin asignaciones."
             )
 
     with col2:
@@ -2751,9 +2703,15 @@ if modulo == "📊 Resumen":
                 .value_counts()
             )
 
-            grafico_simple_barras(
+            mostrar_barras_simples(
                 serie,
                 "Alertas por severidad"
+            )
+
+        else:
+
+            st.caption(
+                "Sin alertas."
             )
 
 
@@ -2879,73 +2837,16 @@ elif modulo == "🚨 Alertas":
                 alertas_medias
             )
 
-        st.markdown(
-            "### Detalle"
+        st.subheader(
+            "Detalle"
         )
 
-        for _, alerta in alertas.iterrows():
-
-            severidad = alerta.get(
-                "severidad",
-                ""
-            )
-
-            if severidad == "CRÍTICA":
-
-                clase = (
-                    "alert-critical"
-                )
-
-                icono = "🔴"
-
-            elif severidad == "MEDIA":
-
-                clase = (
-                    "alert-medium"
-                )
-
-                icono = "🟡"
-
-            else:
-
-                clase = (
-                    "alert-low"
-                )
-
-                icono = "🟢"
-
-            st.markdown(
-                f"""
-                <div class="{clase}">
-
-                    <b>
-                        {icono}
-                        {severidad}
-                    </b>
-
-                    <br>
-
-                    Partido:
-                    {alerta.get("id_partido", "")}
-
-                    <br>
-
-                    Fecha:
-                    {alerta.get("fecha", "")}
-
-                    <br>
-
-                    Tipo:
-                    {alerta.get("tipo", "")}
-
-                    <br>
-
-                    {alerta.get("mensaje", "")}
-
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+        st.dataframe(
+            alertas,
+            use_container_width=True,
+            hide_index=True,
+            height=500
+        )
 
 
 # ============================================================
@@ -2972,15 +2873,13 @@ elif modulo == "📈 Estadísticas":
         campo = asignaciones[
             asignaciones[
                 "funcion_asignada"
-            ]
-            == "CAMPO"
+            ] == "CAMPO"
         ]
 
         mesa = asignaciones[
             asignaciones[
                 "funcion_asignada"
-            ]
-            == "MESA"
+            ] == "MESA"
         ]
 
         col1, col2 = st.columns(2)
@@ -2989,7 +2888,7 @@ elif modulo == "📈 Estadísticas":
 
             if not campo.empty:
 
-                grafico_simple_barras(
+                mostrar_barras_simples(
                     campo[
                         "nombre_completo"
                     ].value_counts(),
@@ -3000,14 +2899,15 @@ elif modulo == "📈 Estadísticas":
             else:
 
                 st.caption(
-                    "No existen asignaciones de campo."
+                    "No existen asignaciones "
+                    "de campo."
                 )
 
         with col2:
 
             if not mesa.empty:
 
-                grafico_simple_barras(
+                mostrar_barras_simples(
                     mesa[
                         "nombre_completo"
                     ].value_counts(),
@@ -3018,19 +2918,19 @@ elif modulo == "📈 Estadísticas":
             else:
 
                 st.caption(
-                    "No existen asignaciones de mesa."
+                    "No existen asignaciones "
+                    "de mesa."
                 )
 
-        st.markdown(
-            "### Sustituciones de categoría"
+        st.subheader(
+            "Sustituciones de categoría"
         )
 
         sustituciones = (
             asignaciones[
                 asignaciones[
                     "sustitucion_categoria"
-                ]
-                == "SI"
+                ] == "SI"
             ]
         )
 
@@ -3038,7 +2938,8 @@ elif modulo == "📈 Estadísticas":
 
             st.success(
                 "No fue necesario utilizar "
-                "sustituciones de categoría superior."
+                "sustituciones de categoría "
+                "superior."
             )
 
         else:
@@ -3046,7 +2947,8 @@ elif modulo == "📈 Estadísticas":
             st.warning(
                 f"Se realizaron "
                 f"{len(sustituciones)} "
-                "sustituciones de categoría superior."
+                "sustituciones de categoría "
+                "superior."
             )
 
             st.dataframe(
@@ -3070,8 +2972,9 @@ elif modulo == "📥 Descargas":
     )
 
     st.write(
-        "Todos los informes se generan automáticamente "
-        "a partir de la programación calculada."
+        "Todos los informes se generan "
+        "a partir de la programación "
+        "calculada."
     )
 
     # ========================================================
@@ -3098,7 +3001,7 @@ elif modulo == "📥 Descargas":
     )
 
     # ========================================================
-    # CSV ASIGNACIONES
+    # ASIGNACIONES CSV
     # ========================================================
 
     if not asignaciones.empty:
@@ -3116,7 +3019,7 @@ elif modulo == "📥 Descargas":
         )
 
     # ========================================================
-    # CSV ALERTAS
+    # ALERTAS CSV
     # ========================================================
 
     if not alertas.empty:
@@ -3135,30 +3038,57 @@ elif modulo == "📥 Descargas":
 
     # ========================================================
     # PDF
+    #
+    # Los gráficos matplotlib se generan SOLO aquí,
+    # cuando realmente se solicita el informe.
     # ========================================================
 
-    pdf_bytes = generar_pdf_resumen(
-        datos,
-        asignaciones,
-        alertas
+    st.divider()
+
+    st.subheader(
+        "Informe ejecutivo"
     )
 
-    st.download_button(
-        label="📕 Descargar informe PDF",
-        data=pdf_bytes,
-        file_name=(
-            "informe_programacion_arbitros.pdf"
-        ),
-        mime="application/pdf",
+    st.write(
+        "El PDF contiene los gráficos "
+        "profesionales y el detalle completo "
+        "de la programación."
+    )
+
+    # --------------------------------------------------------
+    # Generación bajo demanda
+    # --------------------------------------------------------
+
+    if st.button(
+        "📕 Generar informe PDF",
         use_container_width=True
-    )
+    ):
 
-    st.success(
-        "Los gráficos profesionales se generan "
-        "únicamente dentro del informe PDF. "
-        "La aplicación utiliza visualizaciones "
-        "ligeras para mejorar el rendimiento."
-    )
+        with st.spinner(
+            "Generando informe PDF..."
+        ):
+
+            pdf_bytes = (
+                generar_pdf_resumen(
+                    datos,
+                    asignaciones,
+                    alertas
+                )
+            )
+
+        st.download_button(
+            label="⬇️ Descargar informe PDF",
+            data=pdf_bytes,
+            file_name=(
+                "informe_programacion_arbitros.pdf"
+            ),
+            mime="application/pdf",
+            use_container_width=True
+        )
+
+        st.success(
+            "Informe PDF generado correctamente."
+        )
 
 
 # ============================================================
@@ -3167,18 +3097,10 @@ elif modulo == "📥 Descargas":
 
 st.markdown(
     """
-    <div style="
-        margin-top:30px;
-        padding:12px;
-        text-align:center;
-        color:#7f8c8d;
-        font-size:11px;
-        border-top:1px solid #dfe4e8;
-    ">
-
+    <div class="footer-text">
         Basketball Referees Scheduler ·
-        Sistema de programación y análisis de árbitros
-
+        Sistema de programación y análisis
+        de árbitros
     </div>
     """,
     unsafe_allow_html=True
