@@ -1230,7 +1230,7 @@ def ejecutar_asignacion(datos):
                         f"para cubrir un requerimiento "
                         f"{fila['categoria_requerida']}."
                     )
-            ]
+            }
 
     return (
         df_asignaciones,
