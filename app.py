@@ -1,33 +1,44 @@
 # ============================================================
-# app.py
-# PROGRAMADOR DE ÁRBITROS DE BALONCESTO
+# APP.PY
+# SISTEMA DE PROGRAMACIÓN Y ASIGNACIÓN DE ÁRBITROS
+# BALONCESTO
 # ============================================================
 
+import streamlit as st
+import pandas as pd
+import numpy as np
 import io
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
+from collections import defaultdict
 
-import numpy as np
-import pandas as pd
-import streamlit as st
-
+# Reportes
+import matplotlib.pyplot as plt
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+    PageBreak
+)
 
 # ============================================================
-# CONFIGURACIÓN GENERAL
+# CONFIGURACIÓN
 # ============================================================
 
 st.set_page_config(
-    page_title="Programador de Árbitros de Baloncesto",
+    page_title="Basketball Referees Scheduler",
     page_icon="🏀",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
-
-# Reglas del sistema
-MAX_CAMPO_DIA = 2
-MAX_CAMPO_SEMANA = 14
-
 
 # ============================================================
 # ESTILOS
@@ -37,137 +48,264 @@ st.markdown(
     """
     <style>
 
-    /* ---------- SIDEBAR ---------- */
+    /* --------------------------------------------------------
+       FONDO GENERAL
+       -------------------------------------------------------- */
 
-    [data-testid="stSidebar"] {
-        min-width: 245px;
-        max-width: 245px;
+    .stApp {
+        background-color: #f3f5f7;
     }
 
-    [data-testid="stSidebar"] .block-container {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
+    .main {
+        background-color: #f3f5f7;
     }
 
-    [data-testid="stSidebar"] .stRadio > div {
-        gap: 0.05rem;
+    /* --------------------------------------------------------
+       ENCABEZADO
+       -------------------------------------------------------- */
+
+    .app-header {
+        background: linear-gradient(
+            135deg,
+            #17202a 0%,
+            #273746 100%
+        );
+        padding: 18px 24px;
+        border-radius: 12px;
+        margin-bottom: 18px;
+        color: white;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
     }
 
-    [data-testid="stSidebar"] .stRadio label {
-        padding-top: 0.10rem !important;
-        padding-bottom: 0.10rem !important;
-        margin-bottom: 0 !important;
-    }
-
-    /* ---------- BOTONES ---------- */
-
-    .stButton > button,
-    .stDownloadButton > button {
-        border-radius: 8px;
-        font-weight: 600;
-    }
-
-    /* ---------- TÍTULOS ---------- */
-
-    h1 {
+    .app-header h1 {
+        margin: 0;
+        font-size: 27px;
         font-weight: 700;
     }
 
-    h2, h3 {
-        font-weight: 650;
+    .app-header p {
+        margin: 5px 0 0 0;
+        color: #d5d8dc;
+        font-size: 14px;
     }
 
-    /* ---------- TARJETAS ---------- */
+    /* --------------------------------------------------------
+       SIDEBAR
+       -------------------------------------------------------- */
 
-    .metric-card {
-        padding: 1rem;
-        border-radius: 12px;
-        border: 1px solid rgba(120,120,120,.20);
-        background: rgba(120,120,120,.06);
+    section[data-testid="stSidebar"] {
+        background-color: #202b33;
     }
 
-    /* ---------- ALERTAS ---------- */
+    section[data-testid="stSidebar"] * {
+        color: #f4f6f7;
+    }
 
-    .alerta-critica {
-        padding: 12px;
+    section[data-testid="stSidebar"] .stRadio > div {
+        gap: 3px;
+    }
+
+    section[data-testid="stSidebar"] label {
+        padding: 4px 7px !important;
+        margin: 0 !important;
+        border-radius: 5px;
+        font-size: 13px;
+    }
+
+    section[data-testid="stSidebar"] label:hover {
+        background-color: #34495e;
+    }
+
+    /* --------------------------------------------------------
+       TARJETAS KPI
+       -------------------------------------------------------- */
+
+    .kpi-card {
+        background: white;
+        border-radius: 10px;
+        padding: 14px;
+        border: 1px solid #dfe4e8;
+        box-shadow: 0 2px 7px rgba(0,0,0,0.05);
+        min-height: 85px;
+    }
+
+    .kpi-title {
+        font-size: 12px;
+        color: #7b8794;
+        margin-bottom: 5px;
+    }
+
+    .kpi-value {
+        font-size: 25px;
+        font-weight: 700;
+        color: #17202a;
+    }
+
+    /* --------------------------------------------------------
+       ALERTAS
+       -------------------------------------------------------- */
+
+    .alert-critical {
+        background-color: #fdecea;
+        border-left: 5px solid #c0392b;
+        padding: 10px 13px;
+        margin-bottom: 7px;
+        border-radius: 5px;
+        color: #7b241c;
+    }
+
+    .alert-high {
+        background-color: #fff3cd;
+        border-left: 5px solid #d68910;
+        padding: 10px 13px;
+        margin-bottom: 7px;
+        border-radius: 5px;
+        color: #7d6608;
+    }
+
+    .alert-medium {
+        background-color: #fef9e7;
+        border-left: 5px solid #f1c40f;
+        padding: 10px 13px;
+        margin-bottom: 7px;
+        border-radius: 5px;
+        color: #7d6608;
+    }
+
+    .alert-low {
+        background-color: #eafaf1;
+        border-left: 5px solid #27ae60;
+        padding: 10px 13px;
+        margin-bottom: 7px;
+        border-radius: 5px;
+        color: #196f3d;
+    }
+
+    /* --------------------------------------------------------
+       SECCIONES
+       -------------------------------------------------------- */
+
+    .section-title {
+        background-color: #273746;
+        color: white;
+        padding: 9px 13px;
+        border-radius: 7px;
+        font-weight: 600;
+        margin: 15px 0 10px 0;
+    }
+
+    /* --------------------------------------------------------
+       BOTONES
+       -------------------------------------------------------- */
+
+    .stDownloadButton button {
+        background-color: #273746 !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 6px !important;
+    }
+
+    .stDownloadButton button:hover {
+        background-color: #34495e !important;
+    }
+
+    /* --------------------------------------------------------
+       FILE UPLOADER
+       -------------------------------------------------------- */
+
+    section[data-testid="stFileUploaderDropzone"] {
+        background-color: white;
+        border: 1px dashed #7f8c8d;
         border-radius: 8px;
-        background-color: #ffebee;
-        border-left: 6px solid #d32f2f;
-        margin-bottom: 8px;
     }
 
-    .alerta-media {
-        padding: 12px;
-        border-radius: 8px;
-        background-color: #fff3e0;
-        border-left: 6px solid #f57c00;
-        margin-bottom: 8px;
+    section[data-testid="stFileUploaderDropzone"] button {
+        background-color: #273746 !important;
+        color: white !important;
     }
 
-    .alerta-baja {
-        padding: 12px;
-        border-radius: 8px;
-        background-color: #e8f5e9;
-        border-left: 6px solid #388e3c;
-        margin-bottom: 8px;
+    /* --------------------------------------------------------
+       DATAFRAME
+       -------------------------------------------------------- */
+
+    [data-testid="stDataFrame"] {
+        border-radius: 7px;
+        overflow: hidden;
     }
 
     </style>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
 
+# ============================================================
+# CONSTANTES
+# ============================================================
+
+MAX_CAMPO_DIA = 2
+MAX_CAMPO_SEMANA = 14
+
+ORDEN_CATEGORIAS = {
+    "3ra": 1,
+    "2da": 2,
+    "1ra": 3
+}
 
 # ============================================================
 # FUNCIONES DE TEXTO
 # ============================================================
 
 def limpiar_texto(valor):
-    """
-    Convierte texto a una forma comparable:
-    - minúsculas
-    - sin tildes
-    - espacios normalizados
-    """
 
-    if valor is None:
+    if pd.isna(valor):
         return ""
-
-    try:
-        if pd.isna(valor):
-            return ""
-    except Exception:
-        pass
 
     texto = str(valor).strip().lower()
 
     texto = unicodedata.normalize(
-        "NFKD",
+        "NFD",
         texto
     )
 
     texto = "".join(
         c for c in texto
-        if not unicodedata.combining(c)
-    )
-
-    texto = re.sub(
-        r"\s+",
-        " ",
-        texto
+        if unicodedata.category(c) != "Mn"
     )
 
     return texto
 
 
+def categoria_numero(categoria):
+
+    texto = limpiar_texto(categoria)
+
+    if "1ra" in texto or "primera" in texto:
+        return 3
+
+    if "2da" in texto or "segunda" in texto:
+        return 2
+
+    if "3ra" in texto or "tercera" in texto:
+        return 1
+
+    return 0
+
+
+def categoria_superior_o_igual(
+    categoria_disponible,
+    categoria_requerida
+):
+
+    return (
+        categoria_numero(categoria_disponible)
+        >=
+        categoria_numero(categoria_requerida)
+    )
+
+
 # ============================================================
-# FUNCIONES DE ROLES
+# ROLES
 # ============================================================
-
-def es_hibrido(rol):
-
-    return "hibrid" in limpiar_texto(rol)
-
 
 def es_campo(rol):
 
@@ -175,7 +313,7 @@ def es_campo(rol):
 
     return (
         "arbitro de campo" in texto
-        and not es_hibrido(texto)
+        and "hibrido" not in texto
     )
 
 
@@ -184,127 +322,66 @@ def es_mesa(rol):
     texto = limpiar_texto(rol)
 
     return (
-        (
-            "oficial de mesa" in texto
-            or
-            "oficial mesa" in texto
-        )
-        and not es_hibrido(texto)
+        "oficial de mesa" in texto
+        and "hibrido" not in texto
     )
 
 
-# ============================================================
-# CATEGORÍAS
-# ============================================================
+def es_hibrido(rol):
 
-def categoria_numero(categoria):
-
-    texto = limpiar_texto(categoria)
-
-    if (
-        "1ra" in texto
-        or "primera" in texto
-    ):
-        return 3
-
-    if (
-        "2da" in texto
-        or "segunda" in texto
-    ):
-        return 2
-
-    if (
-        "3ra" in texto
-        or "tercera" in texto
-    ):
-        return 1
-
-    return 0
-
-
-def categoria_superior_o_igual(
-    categoria_actual,
-    categoria_requerida
-):
-
-    actual = categoria_numero(
-        categoria_actual
-    )
-
-    requerida = categoria_numero(
-        categoria_requerida
-    )
-
-    if requerida == 0:
-        return False
-
-    return actual >= requerida
+    return "hibrido" in limpiar_texto(rol)
 
 
 # ============================================================
-# HORARIOS
+# FECHAS Y HORARIOS
 # ============================================================
 
-def convertir_hora_minutos(valor):
-
-    if valor is None:
-        return None
+def convertir_fecha(valor):
 
     try:
-        if pd.isna(valor):
-            return None
+        return pd.to_datetime(
+            valor,
+            errors="coerce"
+        )
     except Exception:
-        pass
+        return pd.NaT
 
-    if isinstance(valor, datetime):
 
-        return (
-            valor.hour * 60
-            + valor.minute
-        )
+def hora_a_minutos(valor):
 
-    if hasattr(valor, "hour") and hasattr(
-        valor,
-        "minute"
-    ):
-
-        return (
-            valor.hour * 60
-            + valor.minute
-        )
+    if pd.isna(valor):
+        return None
 
     texto = str(valor).strip()
 
-    formatos = [
-        "%H:%M",
-        "%H:%M:%S",
-        "%I:%M %p",
-        "%I:%M:%S %p",
-    ]
+    try:
 
-    for formato in formatos:
+        if ":" in texto:
+
+            partes = texto.split(":")
+
+            horas = int(partes[0])
+            minutos = int(partes[1][:2])
+
+            return horas * 60 + minutos
+
+        return int(float(texto))
+
+    except Exception:
 
         try:
-
-            dt = datetime.strptime(
-                texto,
-                formato
+            hora = pd.to_datetime(
+                texto
             )
 
             return (
-                dt.hour * 60
-                + dt.minute
+                hora.hour * 60
+                + hora.minute
             )
 
-        except ValueError:
-            continue
+        except Exception:
+            return None
 
-    return None
-
-
-# ============================================================
-# DISPONIBILIDAD
-# ============================================================
 
 def intervalo_disponible(
     disponibilidad,
@@ -313,101 +390,63 @@ def intervalo_disponible(
     fin
 ):
 
-    if (
-        disponibilidad is None
-        or disponibilidad.empty
-    ):
+    if disponibilidad is None:
         return False
 
-    if pd.isna(fecha):
+    if disponibilidad.empty:
         return False
 
-    fecha_objetivo = pd.Timestamp(
+    fecha_normalizada = pd.to_datetime(
         fecha
-    ).normalize()
+    ).date()
 
     for _, fila in disponibilidad.iterrows():
 
         dia = fila.get("dia")
 
-        if pd.isna(dia):
-            continue
-
-        coincide = False
-
-        # ----------------------------------------------------
-        # Si DIA contiene una fecha
-        # ----------------------------------------------------
-
         try:
-
-            fecha_dia = pd.to_datetime(
-                dia,
-                errors="coerce",
-                dayfirst=True
-            )
-
-            if pd.notna(fecha_dia):
-
-                coincide = (
-                    fecha_dia.normalize()
-                    ==
-                    fecha_objetivo
-                )
+            fecha_disp = pd.to_datetime(
+                dia
+            ).date()
 
         except Exception:
-            pass
 
-        # ----------------------------------------------------
-        # Si DIA contiene nombre del día
-        # ----------------------------------------------------
-
-        if not coincide:
-
-            nombre_dia = limpiar_texto(
-                dia
-            )
-
-            dias = {
-                "lunes": 0,
-                "martes": 1,
-                "miercoles": 2,
-                "jueves": 3,
-                "viernes": 4,
-                "sabado": 5,
-                "domingo": 6,
-            }
-
-            if nombre_dia in dias:
-
-                coincide = (
-                    fecha_objetivo.dayofweek
-                    ==
-                    dias[nombre_dia]
+            if limpiar_texto(dia) in [
+                limpiar_texto(
+                    pd.Timestamp(fecha).day_name()
+                ),
+                limpiar_texto(
+                    pd.Timestamp(fecha).day_name(
+                        locale="es_ES"
+                    )
+                    if hasattr(
+                        pd.Timestamp(fecha),
+                        "day_name"
+                    )
+                    else ""
                 )
+            ]:
+                fecha_disp = fecha_normalizada
+            else:
+                continue
 
-        if not coincide:
+        if fecha_disp != fecha_normalizada:
             continue
 
-        hora_inicio = convertir_hora_minutos(
+        inicio_disp = hora_a_minutos(
             fila.get("hora_inicio")
         )
 
-        hora_fin = convertir_hora_minutos(
+        fin_disp = hora_a_minutos(
             fila.get("hora_fin")
         )
 
         if (
-            hora_inicio is None
-            or hora_fin is None
+            inicio_disp is not None
+            and fin_disp is not None
+            and inicio_disp <= inicio
+            and fin_disp >= fin
         ):
-            continue
-
-        if (
-            hora_inicio <= inicio
-            and hora_fin >= fin
-        ):
-
             return True
 
     return False
@@ -417,6 +456,7 @@ def intervalo_disponible(
 # PREPARAR PARTIDOS
 # ============================================================
 
+@st.cache_data(show_spinner=False)
 def preparar_partidos(datos):
 
     partidos = datos[
@@ -426,117 +466,43 @@ def preparar_partidos(datos):
     if partidos.empty:
         return partidos
 
-    # --------------------------------------------------------
-    # Fecha
-    # --------------------------------------------------------
-
-    partidos["fecha_dt"] = pd.to_datetime(
-        partidos.get("fecha"),
-        errors="coerce",
-        dayfirst=True
-    )
-
-    # --------------------------------------------------------
-    # Horarios
-    # --------------------------------------------------------
-
-    if "hora_inicio" not in partidos.columns:
-
-        partidos["hora_inicio"] = ""
-
-    if "hora_fin" not in partidos.columns:
-
-        partidos["hora_fin"] = ""
+    partidos["fecha_dt"] = partidos[
+        "fecha"
+    ].apply(convertir_fecha)
 
     partidos["inicio_min"] = partidos[
         "hora_inicio"
-    ].apply(
-        convertir_hora_minutos
-    )
+    ].apply(hora_a_minutos)
 
     partidos["fin_min"] = partidos[
         "hora_fin"
-    ].apply(
-        convertir_hora_minutos
-    )
+    ].apply(hora_a_minutos)
 
-    # --------------------------------------------------------
-    # Reconstruir hora final si es necesario
-    # --------------------------------------------------------
-
-    if "duracion_min" in partidos.columns:
-
-        for indice in partidos.index:
-
-            inicio = partidos.at[
-                indice,
-                "inicio_min"
-            ]
-
-            fin = partidos.at[
-                indice,
-                "fin_min"
-            ]
-
-            duracion = partidos.at[
-                indice,
-                "duracion_min"
-            ]
-
-            if (
-                inicio is not None
-                and pd.isna(fin)
-                and pd.notna(duracion)
-            ):
-
-                try:
-
-                    partidos.at[
-                        indice,
-                        "fin_min"
-                    ] = (
-                        inicio
-                        + int(duracion)
-                    )
-
-                except Exception:
-                    pass
-
-    # --------------------------------------------------------
-    # Orden cronológico
-    # --------------------------------------------------------
-
-    columnas_orden = [
-        "fecha_dt",
-        "inicio_min",
-        "escenario"
-    ]
-
-    columnas_orden = [
-        c
-        for c in columnas_orden
-        if c in partidos.columns
-    ]
+    partidos = partidos[
+        partidos["fecha_dt"].notna()
+    ].copy()
 
     partidos = partidos.sort_values(
-        columnas_orden,
-        na_position="last"
-    ).reset_index(
-        drop=True
+        by=[
+            "fecha_dt",
+            "inicio_min",
+            "escenario",
+            "id_partido"
+        ]
     )
 
-    return partidos
+    return partidos.reset_index(drop=True)
 
 
 # ============================================================
-# CREAR REGISTRO DE ASIGNACIÓN
+# REGISTRO DE ASIGNACIÓN
 # ============================================================
 
 def crear_registro_asignacion(
     partido,
-    arbitro,
+    arb,
     funcion,
-    categoria_requerida,
+    categoria_req,
     sustitucion,
     categoria_utilizada
 ):
@@ -544,93 +510,55 @@ def crear_registro_asignacion(
     return {
 
         "id_partido":
-            partido.get(
-                "id_partido"
-            ),
+            partido.get("id_partido"),
 
         "fecha":
-            partido.get(
-                "fecha"
-            ),
+            partido.get("fecha"),
 
         "dia":
-            partido.get(
-                "dia"
-            ),
+            partido.get("dia"),
 
         "hora_inicio":
-            partido.get(
-                "hora_inicio"
-            ),
+            partido.get("hora_inicio"),
 
         "hora_fin":
-            partido.get(
-                "hora_fin"
-            ),
+            partido.get("hora_fin"),
 
         "evento":
-            partido.get(
-                "evento"
-            ),
+            partido.get("evento"),
 
         "escenario":
-            partido.get(
-                "escenario"
-            ),
+            partido.get("escenario"),
 
         "rama":
-            partido.get(
-                "rama"
-            ),
+            partido.get("rama"),
 
-        "categoria":
-            partido.get(
-                "categoria"
-            ),
+        "categoria_partido":
+            partido.get("categoria"),
 
         "id_arbitro":
-            arbitro.get(
-                "id_arbitro"
-            ),
+            arb.get("id_arbitro"),
 
         "nombre_completo":
-            arbitro.get(
-                "nombre_completo"
-            ),
+            arb.get("nombre_completo"),
 
         "documento_identidad":
-            arbitro.get(
-                "documento_identidad"
-            ),
-
-        "email":
-            arbitro.get(
-                "email"
-            ),
-
-        "numero_celular":
-            arbitro.get(
-                "numero_celular"
-            ),
+            arb.get("documento_identidad"),
 
         "rol_arbitral":
-            arbitro.get(
-                "rol_arbitral"
-            ),
+            arb.get("rol_arbitral"),
 
         "funcion_asignada":
             funcion,
 
         "categoria_requerida":
-            categoria_requerida,
+            categoria_req,
 
         "categoria_utilizada":
             categoria_utilizada,
 
         "sustitucion_categoria":
-            "SI"
-            if sustitucion
-            else "NO",
+            "SI" if sustitucion else "NO"
     }
 
 
@@ -638,9 +566,7 @@ def crear_registro_asignacion(
 # MOTOR DE ASIGNACIÓN
 # ============================================================
 
-@st.cache_data(
-    show_spinner=False
-)
+@st.cache_data(show_spinner=False)
 def ejecutar_asignacion(datos):
 
     arbitros = datos[
@@ -656,17 +582,9 @@ def ejecutar_asignacion(datos):
     )
 
     asignaciones = []
-
     alertas = []
 
-    # --------------------------------------------------------
-    # Validación inicial
-    # --------------------------------------------------------
-
-    if (
-        arbitros.empty
-        or partidos.empty
-    ):
+    if arbitros.empty or partidos.empty:
 
         return (
             pd.DataFrame(),
@@ -674,141 +592,37 @@ def ejecutar_asignacion(datos):
         )
 
     # --------------------------------------------------------
-    # Índice de disponibilidad
+    # ÍNDICE DE DISPONIBILIDAD
     # --------------------------------------------------------
 
     disponibilidad_por_arbitro = {
-
-        aid:
-            grupo.copy()
-
+        aid: grupo.copy()
         for aid, grupo
         in disponibilidad.groupby(
             "id_arbitro"
         )
-
     }
 
     # --------------------------------------------------------
-    # Carga
+    # ESTADO
     # --------------------------------------------------------
 
-    carga_dia = {}
+    carga_dia = defaultdict(int)
+    carga_semana = defaultdict(int)
 
-    carga_semana = {}
+    historial = defaultdict(list)
 
-    # Historial de cada árbitro
-    historial = {}
+    # --------------------------------------------------------
+    # CANDIDATOS
+    # --------------------------------------------------------
 
-    # ========================================================
-    # CONFLICTOS
-    # ========================================================
-
-    def tiene_conflicto(
-        id_arbitro,
-        partido
-    ):
-
-        fecha = partido[
-            "fecha_dt"
-        ]
-
-        inicio = partido[
-            "inicio_min"
-        ]
-
-        fin = partido[
-            "fin_min"
-        ]
-
-        historial_arbitro = historial.get(
-            id_arbitro,
-            []
-        )
-
-        for anterior in historial_arbitro:
-
-            if anterior[
-                "fecha"
-            ] != fecha:
-
-                continue
-
-            # ------------------------------------------------
-            # Solapamiento
-            # ------------------------------------------------
-
-            if (
-                inicio < anterior["fin"]
-                and
-                fin > anterior["inicio"]
-            ):
-
-                return True
-
-            # ------------------------------------------------
-            # Partidos consecutivos
-            # ------------------------------------------------
-
-            if (
-                anterior["fin"]
-                == inicio
-            ):
-
-                mismo_escenario = (
-
-                    limpiar_texto(
-                        anterior[
-                            "escenario"
-                        ]
-                    )
-
-                    ==
-
-                    limpiar_texto(
-                        partido.get(
-                            "escenario"
-                        )
-                    )
-
-                )
-
-                # No puede desplazarse instantáneamente
-                # a otro escenario.
-
-                if not mismo_escenario:
-
-                    return True
-
-                # Híbrido no puede realizar
-                # campo + mesa en el mismo partido.
-
-                if (
-                    anterior[
-                        "id_partido"
-                    ]
-                    ==
-                    partido.get(
-                        "id_partido"
-                    )
-                ):
-
-                    return True
-
-        return False
-
-    # ========================================================
-    # BUSCAR CANDIDATOS
-    # ========================================================
-
-    def buscar_candidatos(
+    def candidatos(
         partido,
         funcion,
-        categoria_requerida,
-        permitir_exceso_diario=False
+        categoria_requerida
     ):
 
-        candidatos = []
+        resultado = []
 
         fecha = partido[
             "fecha_dt"
@@ -827,291 +641,196 @@ def ejecutar_asignacion(datos):
             or inicio is None
             or fin is None
         ):
+            return resultado
 
-            return candidatos
+        for _, arb in arbitros.iterrows():
 
-        for _, arbitro in arbitros.iterrows():
-
-            id_arbitro = arbitro.get(
+            aid = arb.get(
                 "id_arbitro"
             )
 
-            rol = arbitro.get(
+            rol = arb.get(
                 "rol_arbitral",
                 ""
             )
 
-            # ------------------------------------------------
-            # Categoría según función
-            # ------------------------------------------------
-
             if funcion == "CAMPO":
 
-                categoria = arbitro.get(
+                categoria = arb.get(
                     "categoria_campo"
+                )
+
+                puede = (
+                    es_campo(rol)
+                    or es_hibrido(rol)
                 )
 
             else:
 
-                categoria = arbitro.get(
+                categoria = arb.get(
                     "categoria_mesa"
                 )
 
-            # ------------------------------------------------
-            # Validar rol
-            # ------------------------------------------------
-
-            puede = False
-
-            if funcion == "CAMPO":
-
-                puede = (
-                    es_campo(rol)
-                    or
-                    es_hibrido(rol)
-                )
-
-            elif funcion == "MESA":
-
                 puede = (
                     es_mesa(rol)
-                    or
-                    es_hibrido(rol)
+                    or es_hibrido(rol)
                 )
 
             if not puede:
-
                 continue
-
-            # ------------------------------------------------
-            # Categoría
-            # ------------------------------------------------
 
             if not categoria_superior_o_igual(
                 categoria,
                 categoria_requerida
             ):
-
                 continue
 
-            # ------------------------------------------------
-            # Disponibilidad
-            # ------------------------------------------------
-
-            disponibilidad_arbitro = (
-                disponibilidad_por_arbitro.get(
-                    id_arbitro,
-                    pd.DataFrame()
-                )
+            disp = disponibilidad_por_arbitro.get(
+                aid,
+                pd.DataFrame()
             )
 
             if not intervalo_disponible(
-                disponibilidad_arbitro,
+                disp,
                 fecha,
                 inicio,
                 fin
             ):
-
                 continue
 
-            # ------------------------------------------------
-            # Conflictos
-            # ------------------------------------------------
+            conflicto = False
 
-            if tiene_conflicto(
-                id_arbitro,
-                partido
-            ):
+            historial_arb = historial.get(
+                aid,
+                []
+            )
 
+            for anterior in historial_arb:
+
+                if anterior["fecha"] != fecha:
+                    continue
+
+                # Solapamiento
+                if (
+                    inicio < anterior["fin"]
+                    and fin > anterior["inicio"]
+                ):
+                    conflicto = True
+                    break
+
+                # Partidos consecutivos
+                if anterior["fin"] == inicio:
+
+                    mismo_escenario = (
+                        limpiar_texto(
+                            anterior["escenario"]
+                        )
+                        ==
+                        limpiar_texto(
+                            partido[
+                                "escenario"
+                            ]
+                        )
+                    )
+
+                    if not mismo_escenario:
+                        conflicto = True
+                        break
+
+                    # Nunca campo y mesa simultáneamente
+                    if (
+                        anterior[
+                            "id_partido"
+                        ]
+                        ==
+                        partido[
+                            "id_partido"
+                        ]
+                    ):
+                        conflicto = True
+                        break
+
+            if conflicto:
                 continue
 
-            # ------------------------------------------------
-            # Carga
-            # ------------------------------------------------
+            campos_dia = carga_dia[
+                (aid, fecha.date())
+            ]
 
-            partidos_campo_dia = (
-                carga_dia.get(
-                    (
-                        id_arbitro,
-                        fecha
-                    ),
-                    0
-                )
-            )
+            campos_semana = carga_semana[
+                aid
+            ]
 
-            partidos_campo_semana = (
-                carga_semana.get(
-                    id_arbitro,
-                    0
-                )
-            )
-
-            # ------------------------------------------------
             # Máximo semanal
-            # ------------------------------------------------
-
             if (
                 funcion == "CAMPO"
-                and
-                partidos_campo_semana
+                and campos_semana
                 >= MAX_CAMPO_SEMANA
             ):
-
                 continue
-
-            # ------------------------------------------------
-            # Exceso diario
-            # ------------------------------------------------
 
             exceso_diario = (
-
                 funcion == "CAMPO"
-
-                and
-
-                partidos_campo_dia
+                and campos_dia
                 >= MAX_CAMPO_DIA
-
             )
 
-            if (
-                exceso_diario
-                and
-                not permitir_exceso_diario
-            ):
-
-                continue
-
-            # ------------------------------------------------
-            # Puntaje
-            # ------------------------------------------------
-
             diferencia_categoria = (
-
                 categoria_numero(
                     categoria
                 )
-
                 -
-
                 categoria_numero(
                     categoria_requerida
                 )
-
             )
 
-            cantidad_asignaciones = len(
-                historial.get(
-                    id_arbitro,
-                    []
-                )
+            numero_asignaciones = len(
+                historial_arb
             )
 
             puntuacion = 0
 
-            # Preferir categoría exacta
+            # Se prioriza coincidencia exacta
             puntuacion += (
-                diferencia_categoria
-                * 100
+                diferencia_categoria * 100
             )
 
-            # Equilibrar carga
+            # Balance de carga
             puntuacion += (
-                cantidad_asignaciones
-                * 10
+                numero_asignaciones * 10
             )
 
-            # Penalizar exceso diario
+            # Exceso diario
             if exceso_diario:
-
                 puntuacion += 1000
 
-            # Preferir personal específico
-            # frente a híbridos cuando sea posible
+            # Híbridos tienen penalización
+            # para reservarlos cuando sea posible
             if es_hibrido(rol):
-
                 puntuacion += 5
 
-            candidatos.append(
-                {
-                    "arbitro":
-                        arbitro,
+            resultado.append({
 
-                    "puntuacion":
-                        puntuacion,
+                "arbitro": arb,
 
-                    "exceso_diario":
-                        exceso_diario,
-                }
-            )
+                "puntuacion":
+                    puntuacion,
 
-        candidatos.sort(
+                "exceso_diario":
+                    exceso_diario
+            })
+
+        resultado.sort(
             key=lambda x:
-            x["puntuacion"]
+                x["puntuacion"]
         )
 
-        return candidatos
+        return resultado
 
-    # ========================================================
-    # REGISTRAR ALERTA
-    # ========================================================
-
-    def registrar_alerta(
-        partido,
-        tipo,
-        categoria,
-        severidad,
-        mensaje
-    ):
-
-        alertas.append(
-            {
-
-                "id_partido":
-                    partido.get(
-                        "id_partido"
-                    ),
-
-                "fecha":
-                    partido.get(
-                        "fecha"
-                    ),
-
-                "hora":
-                    (
-                        f"{partido.get('hora_inicio')}"
-                        f" - "
-                        f"{partido.get('hora_fin')}"
-                    ),
-
-                "evento":
-                    partido.get(
-                        "evento"
-                    ),
-
-                "escenario":
-                    partido.get(
-                        "escenario"
-                    ),
-
-                "tipo":
-                    tipo,
-
-                "severidad":
-                    severidad,
-
-                "categoria_requerida":
-                    categoria,
-
-                "mensaje":
-                    mensaje,
-
-            }
-        )
-
-    # ========================================================
-    # ASIGNAR UNA FUNCIÓN
-    # ========================================================
+    # --------------------------------------------------------
+    # ASIGNAR FUNCIÓN
+    # --------------------------------------------------------
 
     def asignar_funcion(
         partido,
@@ -1121,157 +840,21 @@ def ejecutar_asignacion(datos):
 
         asignados_partido = []
 
-        # ----------------------------------------------------
-        # IMPORTANTE:
-        # este FOR debe terminar completamente.
-        # NO colocar return dentro.
-        # ----------------------------------------------------
+        for categoria_req in categorias:
 
-        for posicion, categoria_req in enumerate(
-            categorias,
-            start=1
-        ):
-
-            if not categoria_req:
-
-                continue
-
-            # ------------------------------------------------
-            # Primero buscar candidatos normales
-            # ------------------------------------------------
-
-            candidatos_disponibles = (
-                buscar_candidatos(
-                    partido,
-                    funcion,
-                    categoria_req,
-                    permitir_exceso_diario=False
-                )
+            candidatos_disponibles = candidatos(
+                partido,
+                funcion,
+                categoria_req
             )
 
             # ------------------------------------------------
-            # Política de excepción:
-            # permitir superar los 2 partidos diarios
-            # cuando no existe otra alternativa.
+            # SI NO HAY CANDIDATOS
             # ------------------------------------------------
 
             if not candidatos_disponibles:
 
-                candidatos_disponibles = (
-                    buscar_candidatos(
-                        partido,
-                        funcion,
-                        categoria_req,
-                        permitir_exceso_diario=True
-                    )
-                )
-
-            # ------------------------------------------------
-            # Sin candidatos
-            # ------------------------------------------------
-
-            if not candidatos_disponibles:
-
-                registrar_alerta(
-                    partido,
-                    funcion,
-                    categoria_req,
-                    "CRÍTICA",
-                    (
-                        "No existe personal disponible "
-                        f"para {funcion.lower()} con "
-                        f"categoría {categoria_req}."
-                    )
-                )
-
-                continue
-
-            # ------------------------------------------------
-            # Seleccionar mejor candidato
-            # ------------------------------------------------
-
-            seleccionado = (
-                candidatos_disponibles[0]
-            )
-
-            arbitro = (
-                seleccionado[
-                    "arbitro"
-                ]
-            )
-
-            id_arbitro = (
-                arbitro.get(
-                    "id_arbitro"
-                )
-            )
-
-            # ------------------------------------------------
-            # Categoría utilizada
-            # ------------------------------------------------
-
-            if funcion == "CAMPO":
-
-                categoria_utilizada = (
-                    arbitro.get(
-                        "categoria_campo"
-                    )
-                )
-
-            else:
-
-                categoria_utilizada = (
-                    arbitro.get(
-                        "categoria_mesa"
-                    )
-                )
-
-            # ------------------------------------------------
-            # Sustitución de categoría
-            # ------------------------------------------------
-
-            sustitucion = (
-
-                categoria_numero(
-                    categoria_utilizada
-                )
-
-                >
-
-                categoria_numero(
-                    categoria_req
-                )
-
-            )
-
-            # ------------------------------------------------
-            # Crear registro
-            # ------------------------------------------------
-
-            registro = (
-                crear_registro_asignacion(
-                    partido,
-                    arbitro,
-                    funcion,
-                    categoria_req,
-                    sustitucion,
-                    categoria_utilizada
-                )
-            )
-
-            asignados_partido.append(
-                registro
-            )
-
-            # ------------------------------------------------
-            # Actualizar historial
-            # ------------------------------------------------
-
-            historial.setdefault(
-                id_arbitro,
-                []
-            ).append(
-                {
+                alertas.append({
 
                     "id_partido":
                         partido.get(
@@ -1279,108 +862,216 @@ def ejecutar_asignacion(datos):
                         ),
 
                     "fecha":
-                        partido[
-                            "fecha_dt"
-                        ],
+                        partido.get(
+                            "fecha"
+                        ),
 
-                    "inicio":
-                        partido[
-                            "inicio_min"
-                        ],
+                    "hora":
+                        (
+                            f"{partido.get('hora_inicio')} "
+                            f"- "
+                            f"{partido.get('hora_fin')}"
+                        ),
 
-                    "fin":
-                        partido[
-                            "fin_min"
-                        ],
+                    "evento":
+                        partido.get(
+                            "evento"
+                        ),
 
                     "escenario":
                         partido.get(
                             "escenario"
                         ),
 
-                    "funcion":
+                    "tipo":
                         funcion,
 
-                }
+                    "severidad":
+                        "CRÍTICA",
+
+                    "categoria_requerida":
+                        categoria_req,
+
+                    "mensaje":
+                        (
+                            f"No existe personal disponible "
+                            f"para {funcion.lower()} con "
+                            f"categoría {categoria_req}."
+                        )
+                })
+
+                continue
+
+            seleccionado = (
+                candidatos_disponibles[0]
+            )
+
+            arb = seleccionado[
+                "arbitro"
+            ]
+
+            aid = arb.get(
+                "id_arbitro"
+            )
+
+            categoria_utilizada = (
+                arb.get(
+                    "categoria_campo"
+                )
+                if funcion == "CAMPO"
+                else arb.get(
+                    "categoria_mesa"
+                )
+            )
+
+            sustitucion = (
+                categoria_numero(
+                    categoria_utilizada
+                )
+                >
+                categoria_numero(
+                    categoria_req
+                )
+            )
+
+            registro = crear_registro_asignacion(
+                partido,
+                arb,
+                funcion,
+                categoria_req,
+                sustitucion,
+                categoria_utilizada
+            )
+
+            asignados_partido.append(
+                registro
             )
 
             # ------------------------------------------------
-            # Actualizar carga de campo
+            # HISTORIAL
+            # ------------------------------------------------
+
+            historial[
+                aid
+            ].append({
+
+                "id_partido":
+                    partido.get(
+                        "id_partido"
+                    ),
+
+                "fecha":
+                    partido[
+                        "fecha_dt"
+                    ],
+
+                "inicio":
+                    partido[
+                        "inicio_min"
+                    ],
+
+                "fin":
+                    partido[
+                        "fin_min"
+                    ],
+
+                "escenario":
+                    partido.get(
+                        "escenario"
+                    ),
+
+                "funcion":
+                    funcion
+            })
+
+            # ------------------------------------------------
+            # CARGA
             # ------------------------------------------------
 
             if funcion == "CAMPO":
 
                 clave_dia = (
-                    id_arbitro,
+                    aid,
                     partido[
                         "fecha_dt"
-                    ]
+                    ].date()
                 )
 
                 carga_dia[
                     clave_dia
-                ] = (
-                    carga_dia.get(
-                        clave_dia,
-                        0
-                    )
-                    + 1
-                )
+                ] += 1
 
                 carga_semana[
-                    id_arbitro
-                ] = (
-                    carga_semana.get(
-                        id_arbitro,
-                        0
-                    )
-                    + 1
-                )
+                    aid
+                ] += 1
 
-                # ------------------------------------------------
-                # Alerta por exceso de carga diaria
-                # ------------------------------------------------
-
+                # Supera límite recomendado
                 if (
                     carga_dia[
                         clave_dia
                     ]
-                    >
-                    MAX_CAMPO_DIA
+                    > MAX_CAMPO_DIA
                 ):
 
-                    registrar_alerta(
-                        partido,
-                        "CARGA",
-                        categoria_req,
-                        "MEDIA",
-                        (
-                            f"El árbitro "
-                            f"{arbitro.get('nombre_completo')} "
-                            f"supera la carga recomendada "
-                            f"de {MAX_CAMPO_DIA} partidos "
-                            "de campo en el día. "
-                            "Se utilizó como excepción "
-                            "por disponibilidad limitada."
-                        )
-                    )
+                    alertas.append({
 
-        # ====================================================
-        # MUY IMPORTANTE:
-        # return FUERA del for.
-        # ====================================================
+                        "id_partido":
+                            partido.get(
+                                "id_partido"
+                            ),
+
+                        "fecha":
+                            partido.get(
+                                "fecha"
+                            ),
+
+                        "hora":
+                            (
+                                f"{partido.get('hora_inicio')} "
+                                f"- "
+                                f"{partido.get('hora_fin')}"
+                            ),
+
+                        "evento":
+                            partido.get(
+                                "evento"
+                            ),
+
+                        "escenario":
+                            partido.get(
+                                "escenario"
+                            ),
+
+                        "tipo":
+                            "CARGA",
+
+                        "severidad":
+                            "MEDIA",
+
+                        "categoria_requerida":
+                            categoria_req,
+
+                        "mensaje":
+                            (
+                                f"El árbitro "
+                                f"{arb.get('nombre_completo')} "
+                                f"supera la carga recomendada "
+                                f"de {MAX_CAMPO_DIA} partidos "
+                                f"de campo en el día."
+                            )
+                    })
 
         return asignados_partido
 
     # ========================================================
-    # PROCESAR TODOS LOS PARTIDOS
+    # PROCESAR PARTIDOS
     # ========================================================
 
     for _, partido in partidos.iterrows():
 
-        # ====================================================
-        # ÁRBITROS DE CAMPO
-        # ====================================================
+        # ----------------------------------------------------
+        # CAMPO
+        # ----------------------------------------------------
 
         categorias_campo = []
 
@@ -1410,18 +1101,14 @@ def ejecutar_asignacion(datos):
             )
 
             if (
-                pd.notna(
+                pd.notna(categoria)
+                and limpiar_texto(
                     categoria
-                )
-
-                and
-
-                limpiar_texto(
-                    categoria
-                ) not in (
+                ) not in [
                     "",
-                    "n/a"
-                )
+                    "n/a",
+                    "na"
+                ]
             ):
 
                 categorias_campo.append(
@@ -1430,22 +1117,19 @@ def ejecutar_asignacion(datos):
                     ).strip()
                 )
 
-        registros_campo = (
-            asignar_funcion(
-                partido,
-                "CAMPO",
-                categorias_campo
-            )
+        registros_campo = asignar_funcion(
+            partido,
+            "CAMPO",
+            categorias_campo
         )
 
-        # Protección adicional contra None
         asignaciones.extend(
-            registros_campo or []
+            registros_campo
         )
 
-        # ====================================================
-        # OFICIALES DE MESA
-        # ====================================================
+        # ----------------------------------------------------
+        # MESA
+        # ----------------------------------------------------
 
         categorias_mesa = []
 
@@ -1475,18 +1159,14 @@ def ejecutar_asignacion(datos):
             )
 
             if (
-                pd.notna(
+                pd.notna(categoria)
+                and limpiar_texto(
                     categoria
-                )
-
-                and
-
-                limpiar_texto(
-                    categoria
-                ) not in (
+                ) not in [
                     "",
-                    "n/a"
-                )
+                    "n/a",
+                    "na"
+                ]
             ):
 
                 categorias_mesa.append(
@@ -1495,22 +1175,15 @@ def ejecutar_asignacion(datos):
                     ).strip()
                 )
 
-        registros_mesa = (
-            asignar_funcion(
-                partido,
-                "MESA",
-                categorias_mesa
-            )
+        registros_mesa = asignar_funcion(
+            partido,
+            "MESA",
+            categorias_mesa
         )
 
-        # Protección adicional contra None
         asignaciones.extend(
-            registros_mesa or []
+            registros_mesa
         )
-
-    # ========================================================
-    # RESULTADOS
-    # ========================================================
 
     df_asignaciones = pd.DataFrame(
         asignaciones
@@ -1527,134 +1200,143 @@ def ejecutar_asignacion(datos):
 
 
 # ============================================================
-# NORMALIZACIÓN DE COLUMNAS
+# CARGA DEL EXCEL
 # ============================================================
 
-def normalizar_columnas(df):
+@st.cache_data(show_spinner=False)
+def cargar_excel_archivo(
+    archivo
+):
 
-    df = df.copy()
-
-    nuevas = []
-
-    for columna in df.columns:
-
-        texto = limpiar_texto(
-            columna
-        )
-
-        texto = texto.replace(
-            " ",
-            "_"
-        )
-
-        nuevas.append(
-            texto
-        )
-
-    df.columns = nuevas
-
-    return df
-
-
-# ============================================================
-# CARGAR EXCEL
-# ============================================================
-
-def cargar_excel(archivo):
-
-    libro = pd.ExcelFile(
+    excel = pd.ExcelFile(
         archivo
     )
 
-    nombres_originales = (
-        libro.sheet_names
-    )
+    hojas = excel.sheet_names
 
-    nombres_normalizados = {
+    requeridas = [
+        "Arbitros",
+        "Disponibilidad_Arbitros",
+        "Config_Eventos",
+        "Programacion_Partidos"
+    ]
 
-        limpiar_texto(nombre):
-            nombre
+    faltantes = [
+        hoja
+        for hoja in requeridas
+        if hoja not in hojas
+    ]
 
-        for nombre
-        in nombres_originales
+    if faltantes:
 
-    }
-
-    # --------------------------------------------------------
-    # Posibles nombres
-    # --------------------------------------------------------
-
-    equivalencias = {
-
-        "arbitros": [
-            "arbitros"
-        ],
-
-        "disponibilidad_arbitros": [
-            "disponibilidad_arbitros"
-        ],
-
-        "config_eventos": [
-            "config_eventos"
-        ],
-
-        "programacion_partidos": [
-            "programacion_partidos"
-        ],
-
-    }
-
-    datos = {}
-
-    for clave, opciones in equivalencias.items():
-
-        hoja_encontrada = None
-
-        for opcion in opciones:
-
-            opcion_normalizada = (
-                limpiar_texto(
-                    opcion
-                )
-            )
-
-            if (
-                opcion_normalizada
-                in nombres_normalizados
-            ):
-
-                hoja_encontrada = (
-                    nombres_normalizados[
-                        opcion_normalizada
-                    ]
-                )
-
-                break
-
-        if hoja_encontrada is None:
-
-            raise ValueError(
-                f"No se encontró la hoja "
-                f"'{clave}'. "
-                f"Hojas encontradas: "
-                f"{', '.join(nombres_originales)}"
-            )
-
-        datos[clave] = normalizar_columnas(
-            pd.read_excel(
-                libro,
-                sheet_name=hoja_encontrada
-            )
+        raise ValueError(
+            "Faltan las siguientes hojas: "
+            + ", ".join(faltantes)
         )
+
+    datos = {
+
+        "arbitros":
+            pd.read_excel(
+                archivo,
+                sheet_name="Arbitros"
+            ),
+
+        "disponibilidad_arbitros":
+            pd.read_excel(
+                archivo,
+                sheet_name="Disponibilidad_Arbitros"
+            ),
+
+        "config_eventos":
+            pd.read_excel(
+                archivo,
+                sheet_name="Config_Eventos"
+            ),
+
+        "programacion_partidos":
+            pd.read_excel(
+                archivo,
+                sheet_name="Programacion_Partidos"
+            )
+    }
 
     return datos
 
 
 # ============================================================
-# EXPORTAR CSV
+# GENERAR XLSX
 # ============================================================
 
-def exportar_csv(df):
+def generar_excel(
+    datos,
+    asignaciones,
+    alertas
+):
+
+    buffer = io.BytesIO()
+
+    with pd.ExcelWriter(
+        buffer,
+        engine="openpyxl"
+    ) as writer:
+
+        datos[
+            "arbitros"
+        ].to_excel(
+            writer,
+            sheet_name="Arbitros",
+            index=False
+        )
+
+        datos[
+            "disponibilidad_arbitros"
+        ].to_excel(
+            writer,
+            sheet_name="Disponibilidad",
+            index=False
+        )
+
+        datos[
+            "config_eventos"
+        ].to_excel(
+            writer,
+            sheet_name="Config_Eventos",
+            index=False
+        )
+
+        datos[
+            "programacion_partidos"
+        ].to_excel(
+            writer,
+            sheet_name="Partidos",
+            index=False
+        )
+
+        if not asignaciones.empty:
+
+            asignaciones.to_excel(
+                writer,
+                sheet_name="Asignaciones",
+                index=False
+            )
+
+        if not alertas.empty:
+
+            alertas.to_excel(
+                writer,
+                sheet_name="Alertas",
+                index=False
+            )
+
+    return buffer.getvalue()
+
+
+# ============================================================
+# CSV
+# ============================================================
+
+def generar_csv(df):
 
     return df.to_csv(
         index=False,
@@ -1665,130 +1347,258 @@ def exportar_csv(df):
 
 
 # ============================================================
-# EXPORTAR XLSX
+# GRÁFICOS PARA INFORMES
 # ============================================================
 
-def exportar_xlsx(
-    df,
-    nombre_hoja="Datos"
-):
+def grafico_alertas(alertas):
 
-    salida = io.BytesIO()
-
-    with pd.ExcelWriter(
-        salida,
-        engine="openpyxl"
-    ) as writer:
-
-        df.to_excel(
-            writer,
-            index=False,
-            sheet_name=nombre_hoja[:31]
-        )
-
-    return salida.getvalue()
-
-
-# ============================================================
-# GENERAR PDF
-# ============================================================
-
-def generar_pdf(
-    asignaciones,
-    alertas,
-    partidos,
-    tipo="resumen"
-):
-
-    try:
-
-        from reportlab.lib import colors
-        from reportlab.lib.pagesizes import letter, landscape
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.lib.units import inch
-        from reportlab.platypus import (
-            SimpleDocTemplate,
-            Paragraph,
-            Spacer,
-            Table,
-            TableStyle,
-            PageBreak
-        )
-
-    except ImportError:
-
-        return None
-
-    salida = io.BytesIO()
-
-    if tipo == "programacion":
-
-        pagina = landscape(letter)
-
-    else:
-
-        pagina = letter
-
-    documento = SimpleDocTemplate(
-        salida,
-        pagesize=pagina,
-        rightMargin=30,
-        leftMargin=30,
-        topMargin=30,
-        bottomMargin=30
+    fig, ax = plt.subplots(
+        figsize=(8, 4.5)
     )
 
-    estilos = (
-        getSampleStyleSheet()
+    if alertas.empty:
+
+        ax.text(
+            0.5,
+            0.5,
+            "No existen alertas",
+            ha="center",
+            va="center",
+            fontsize=15
+        )
+
+        ax.axis("off")
+
+        return fig
+
+    conteo = (
+        alertas[
+            "severidad"
+        ]
+        .value_counts()
+    )
+
+    conteo.plot(
+        kind="bar",
+        ax=ax
+    )
+
+    ax.set_title(
+        "Alertas por nivel de severidad"
+    )
+
+    ax.set_xlabel(
+        "Severidad"
+    )
+
+    ax.set_ylabel(
+        "Cantidad"
+    )
+
+    plt.tight_layout()
+
+    return fig
+
+
+def grafico_funciones(
+    asignaciones
+):
+
+    fig, ax = plt.subplots(
+        figsize=(8, 4.5)
+    )
+
+    if asignaciones.empty:
+
+        ax.text(
+            0.5,
+            0.5,
+            "Sin asignaciones",
+            ha="center",
+            va="center",
+            fontsize=15
+        )
+
+        ax.axis("off")
+
+        return fig
+
+    conteo = (
+        asignaciones[
+            "funcion_asignada"
+        ]
+        .value_counts()
+    )
+
+    conteo.plot(
+        kind="bar",
+        ax=ax
+    )
+
+    ax.set_title(
+        "Asignaciones por función"
+    )
+
+    ax.set_xlabel(
+        "Función"
+    )
+
+    ax.set_ylabel(
+        "Cantidad"
+    )
+
+    plt.tight_layout()
+
+    return fig
+
+
+def grafico_carga(
+    asignaciones
+):
+
+    fig, ax = plt.subplots(
+        figsize=(9, 5)
+    )
+
+    if asignaciones.empty:
+
+        ax.text(
+            0.5,
+            0.5,
+            "Sin información",
+            ha="center",
+            va="center"
+        )
+
+        ax.axis("off")
+
+        return fig
+
+    campo = asignaciones[
+        asignaciones[
+            "funcion_asignada"
+        ] == "CAMPO"
+    ]
+
+    if campo.empty:
+
+        ax.text(
+            0.5,
+            0.5,
+            "No existen asignaciones de campo"
+        )
+
+        ax.axis("off")
+
+        return fig
+
+    conteo = (
+        campo[
+            "nombre_completo"
+        ]
+        .value_counts()
+        .head(15)
+        .sort_values()
+    )
+
+    conteo.plot(
+        kind="barh",
+        ax=ax
+    )
+
+    ax.set_title(
+        "Carga de árbitros de campo"
+    )
+
+    ax.set_xlabel(
+        "Partidos"
+    )
+
+    ax.set_ylabel(
+        "Árbitro"
+    )
+
+    plt.tight_layout()
+
+    return fig
+
+
+# ============================================================
+# PDF
+# ============================================================
+
+def generar_pdf_resumen(
+    datos,
+    asignaciones,
+    alertas
+):
+
+    buffer = io.BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=1.3 * cm,
+        leftMargin=1.3 * cm,
+        topMargin=1.3 * cm,
+        bottomMargin=1.3 * cm
+    )
+
+    styles = getSampleStyleSheet()
+
+    titulo = ParagraphStyle(
+        "Titulo",
+        parent=styles["Title"],
+        alignment=TA_CENTER,
+        fontSize=20,
+        spaceAfter=12
+    )
+
+    subtitulo = ParagraphStyle(
+        "Subtitulo",
+        parent=styles["Heading2"],
+        fontSize=13,
+        textColor=colors.HexColor(
+            "#273746"
+        ),
+        spaceBefore=10,
+        spaceAfter=7
+    )
+
+    normal = ParagraphStyle(
+        "NormalCustom",
+        parent=styles["BodyText"],
+        fontSize=9,
+        leading=12
     )
 
     elementos = []
 
-    # ========================================================
-    # TÍTULO
-    # ========================================================
-
-    if tipo == "programacion":
-
-        titulo = (
-            "INFORME DE PROGRAMACIÓN "
-            "DE ÁRBITROS"
+    elementos.append(
+        Paragraph(
+            "INFORME EJECUTIVO",
+            titulo
         )
-
-    elif tipo == "alertas":
-
-        titulo = (
-            "INFORME DE ALERTAS "
-            "DE PROGRAMACIÓN"
-        )
-
-    else:
-
-        titulo = (
-            "RESUMEN EJECUTIVO - "
-            "PROGRAMACIÓN DE ÁRBITROS"
-        )
+    )
 
     elementos.append(
         Paragraph(
-            titulo,
-            estilos["Title"]
+            "Sistema de Programación de Árbitros "
+            "de Baloncesto",
+            subtitulo
         )
     )
-
-    elementos.append(
-        Spacer(
-            1,
-            12
-        )
-    )
-
-    # ========================================================
-    # RESUMEN
-    # ========================================================
 
     total_partidos = len(
-        partidos
+        datos[
+            "programacion_partidos"
+        ]
+    )
+
+    total_arbitros = len(
+        datos[
+            "arbitros"
+        ]
     )
 
     total_asignaciones = len(
@@ -1799,152 +1609,312 @@ def generar_pdf(
         alertas
     )
 
-    alertas_criticas = 0
-    alertas_medias = 0
-    alertas_bajas = 0
-
-    if not alertas.empty:
-
-        alertas_criticas = int(
-            (
-                alertas[
-                    "severidad"
-                ]
-                ==
-                "CRÍTICA"
-            ).sum()
-        )
-
-        alertas_medias = int(
-            (
-                alertas[
-                    "severidad"
-                ]
-                ==
-                "MEDIA"
-            ).sum()
-        )
-
-        alertas_bajas = int(
-            (
-                alertas[
-                    "severidad"
-                ]
-                ==
-                "BAJA"
-            ).sum()
-        )
-
     resumen = [
-
         [
             "Indicador",
             "Resultado"
         ],
-
         [
-            "Partidos",
-            str(
-                total_partidos
-            )
+            "Árbitros registrados",
+            str(total_arbitros)
         ],
-
         [
-            "Asignaciones",
-            str(
-                total_asignaciones
-            )
+            "Partidos programados",
+            str(total_partidos)
         ],
-
+        [
+            "Asignaciones realizadas",
+            str(total_asignaciones)
+        ],
         [
             "Alertas",
-            str(
-                total_alertas
-            )
-        ],
-
-        [
-            "Alertas críticas",
-            str(
-                alertas_criticas
-            )
-        ],
-
-        [
-            "Alertas medias",
-            str(
-                alertas_medias
-            )
-        ],
-
+            str(total_alertas)
+        ]
     ]
 
-    tabla_resumen = Table(
+    tabla = Table(
         resumen,
         colWidths=[
-            3 * inch,
-            2 * inch
+            8 * cm,
+            7 * cm
         ]
     )
 
-    tabla_resumen.setStyle(
-        TableStyle(
-            [
+    tabla.setStyle(
+        TableStyle([
+            (
+                "BACKGROUND",
+                (0, 0),
+                (-1, 0),
+                colors.HexColor(
+                    "#273746"
+                )
+            ),
+            (
+                "TEXTCOLOR",
+                (0, 0),
+                (-1, 0),
+                colors.white
+            ),
+            (
+                "GRID",
+                (0, 0),
+                (-1, -1),
+                0.4,
+                colors.grey
+            ),
+            (
+                "ALIGN",
+                (1, 1),
+                (1, -1),
+                "CENTER"
+            ),
+            (
+                "FONTNAME",
+                (0, 0),
+                (-1, 0),
+                "Helvetica-Bold"
+            ),
+            (
+                "FONTSIZE",
+                (0, 0),
+                (-1, -1),
+                9
+            )
+        ])
+    )
 
-                (
-                    "BACKGROUND",
-                    (0, 0),
-                    (-1, 0),
-                    colors.HexColor(
-                        "#1F4E78"
+    elementos.append(
+        tabla
+    )
+
+    elementos.append(
+        Spacer(1, 10)
+    )
+
+    # --------------------------------------------------------
+    # GRÁFICOS
+    # --------------------------------------------------------
+
+    fig1 = grafico_alertas(
+        alertas
+    )
+
+    imagen1 = io.BytesIO()
+
+    fig1.savefig(
+        imagen1,
+        format="png",
+        dpi=150,
+        bbox_inches="tight"
+    )
+
+    plt.close(fig1)
+
+    imagen1.seek(0)
+
+    from reportlab.platypus import Image
+
+    elementos.append(
+        Image(
+            imagen1,
+            width=16 * cm,
+            height=8 * cm
+        )
+    )
+
+    elementos.append(
+        PageBreak()
+    )
+
+    # --------------------------------------------------------
+    # ALERTAS
+    # --------------------------------------------------------
+
+    elementos.append(
+        Paragraph(
+            "Informe de alertas",
+            subtitulo
+        )
+    )
+
+    if alertas.empty:
+
+        elementos.append(
+            Paragraph(
+                "No se generaron alertas durante "
+                "el proceso de asignación.",
+                normal
+            )
+        )
+
+    else:
+
+        datos_alertas = [
+            [
+                "Partido",
+                "Fecha",
+                "Tipo",
+                "Severidad",
+                "Mensaje"
+            ]
+        ]
+
+        for _, fila in alertas.iterrows():
+
+            datos_alertas.append([
+                str(
+                    fila.get(
+                        "id_partido",
+                        ""
                     )
                 ),
-
-                (
-                    "TEXTCOLOR",
-                    (0, 0),
-                    (-1, 0),
-                    colors.white
+                str(
+                    fila.get(
+                        "fecha",
+                        ""
+                    )
                 ),
-
-                (
-                    "GRID",
-                    (0, 0),
-                    (-1, -1),
-                    0.5,
-                    colors.grey
+                str(
+                    fila.get(
+                        "tipo",
+                        ""
+                    )
                 ),
-
-                (
-                    "ALIGN",
-                    (1, 1),
-                    (-1, -1),
-                    "CENTER"
+                str(
+                    fila.get(
+                        "severidad",
+                        ""
+                    )
                 ),
+                str(
+                    fila.get(
+                        "mensaje",
+                        ""
+                    )
+                )
+            ])
 
+        tabla_alertas = Table(
+            datos_alertas,
+            repeatRows=1,
+            colWidths=[
+                1.6 * cm,
+                2.3 * cm,
+                1.8 * cm,
+                2.2 * cm,
+                9 * cm
             ]
         )
-    )
 
-    elementos.append(
-        tabla_resumen
-    )
+        estilo_alertas = [
+            (
+                "BACKGROUND",
+                (0, 0),
+                (-1, 0),
+                colors.HexColor(
+                    "#273746"
+                )
+            ),
+            (
+                "TEXTCOLOR",
+                (0, 0),
+                (-1, 0),
+                colors.white
+            ),
+            (
+                "GRID",
+                (0, 0),
+                (-1, -1),
+                0.3,
+                colors.grey
+            ),
+            (
+                "VALIGN",
+                (0, 0),
+                (-1, -1),
+                "TOP"
+            ),
+            (
+                "FONTSIZE",
+                (0, 0),
+                (-1, -1),
+                7
+            )
+        ]
 
-    elementos.append(
-        Spacer(
+        for fila_idx in range(
             1,
-            18
+            len(datos_alertas)
+        ):
+
+            severidad = str(
+                datos_alertas[
+                    fila_idx
+                ][3]
+            )
+
+            if severidad == "CRÍTICA":
+
+                estilo_alertas.append(
+                    (
+                        "BACKGROUND",
+                        (3, fila_idx),
+                        (3, fila_idx),
+                        colors.HexColor(
+                            "#f5b7b1"
+                        )
+                    )
+                )
+
+            elif severidad == "MEDIA":
+
+                estilo_alertas.append(
+                    (
+                        "BACKGROUND",
+                        (3, fila_idx),
+                        (3, fila_idx),
+                        colors.HexColor(
+                            "#f9e79f"
+                        )
+                    )
+                )
+
+        tabla_alertas.setStyle(
+            TableStyle(
+                estilo_alertas
+            )
+        )
+
+        elementos.append(
+            tabla_alertas
+        )
+
+    elementos.append(
+        PageBreak()
+    )
+
+    # --------------------------------------------------------
+    # PROGRAMACIÓN
+    # --------------------------------------------------------
+
+    elementos.append(
+        Paragraph(
+            "Programación semanal",
+            subtitulo
         )
     )
 
-    # ========================================================
-    # PROGRAMACIÓN
-    # ========================================================
+    if asignaciones.empty:
 
-    if (
-        tipo == "programacion"
-        and not asignaciones.empty
-    ):
+        elementos.append(
+            Paragraph(
+                "No existen asignaciones.",
+                normal
+            )
+        )
+
+    else:
 
         columnas = [
             "fecha",
@@ -1952,202 +1922,203 @@ def generar_pdf(
             "hora_fin",
             "evento",
             "escenario",
-            "categoria",
+            "categoria_partido",
             "nombre_completo",
-            "funcion_asignada",
-            "categoria_requerida",
-            "categoria_utilizada"
+            "funcion_asignada"
         ]
 
-        columnas = [
+        disponibles = [
             c
             for c in columnas
             if c in asignaciones.columns
         ]
 
-        datos_tabla = [
-            columnas
+        tabla_prog = [
+            disponibles
         ]
 
-        for _, fila in asignaciones[
-            columnas
-        ].iterrows():
+        for _, fila in asignaciones.iterrows():
 
-            datos_tabla.append(
-                [
-                    str(
-                        fila.get(
-                            c,
-                            ""
-                        )
-                    )
-                    for c in columnas
-                ]
-            )
+            tabla_prog.append([
+                str(
+                    fila.get(c, "")
+                )
+                for c in disponibles
+            ])
 
         tabla = Table(
-            datos_tabla,
-            repeatRows=1
+            tabla_prog,
+            repeatRows=1,
+            colWidths=[
+                2 * cm,
+                1.5 * cm,
+                1.5 * cm,
+                3.2 * cm,
+                3 * cm,
+                2.2 * cm,
+                4 * cm,
+                2.2 * cm
+            ][:len(disponibles)]
         )
 
         tabla.setStyle(
-            TableStyle(
-                [
-
-                    (
-                        "BACKGROUND",
-                        (0, 0),
-                        (-1, 0),
-                        colors.HexColor(
-                            "#1F4E78"
-                        )
-                    ),
-
-                    (
-                        "TEXTCOLOR",
-                        (0, 0),
-                        (-1, 0),
-                        colors.white
-                    ),
-
-                    (
-                        "GRID",
-                        (0, 0),
-                        (-1, -1),
-                        0.3,
-                        colors.grey
-                    ),
-
-                    (
-                        "FONTSIZE",
-                        (0, 0),
-                        (-1, -1),
-                        6
-                    ),
-
-                ]
-            )
+            TableStyle([
+                (
+                    "BACKGROUND",
+                    (0, 0),
+                    (-1, 0),
+                    colors.HexColor(
+                        "#273746"
+                    )
+                ),
+                (
+                    "TEXTCOLOR",
+                    (0, 0),
+                    (-1, 0),
+                    colors.white
+                ),
+                (
+                    "GRID",
+                    (0, 0),
+                    (-1, -1),
+                    0.25,
+                    colors.grey
+                ),
+                (
+                    "FONTSIZE",
+                    (0, 0),
+                    (-1, -1),
+                    6
+                ),
+                (
+                    "VALIGN",
+                    (0, 0),
+                    (-1, -1),
+                    "TOP"
+                )
+            ])
         )
 
         elementos.append(
             tabla
         )
 
-    # ========================================================
-    # ALERTAS
-    # ========================================================
-
-    if (
-        tipo == "alertas"
-        and not alertas.empty
-    ):
-
-        columnas = [
-            "id_partido",
-            "fecha",
-            "hora",
-            "evento",
-            "escenario",
-            "tipo",
-            "severidad",
-            "categoria_requerida",
-            "mensaje"
-        ]
-
-        columnas = [
-            c
-            for c in columnas
-            if c in alertas.columns
-        ]
-
-        datos_tabla = [
-            columnas
-        ]
-
-        for _, fila in alertas[
-            columnas
-        ].iterrows():
-
-            datos_tabla.append(
-                [
-                    str(
-                        fila.get(
-                            c,
-                            ""
-                        )
-                    )
-                    for c in columnas
-                ]
-            )
-
-        tabla = Table(
-            datos_tabla,
-            repeatRows=1
-        )
-
-        tabla.setStyle(
-            TableStyle(
-                [
-
-                    (
-                        "BACKGROUND",
-                        (0, 0),
-                        (-1, 0),
-                        colors.HexColor(
-                            "#C62828"
-                        )
-                    ),
-
-                    (
-                        "TEXTCOLOR",
-                        (0, 0),
-                        (-1, 0),
-                        colors.white
-                    ),
-
-                    (
-                        "GRID",
-                        (0, 0),
-                        (-1, -1),
-                        0.3,
-                        colors.grey
-                    ),
-
-                    (
-                        "FONTSIZE",
-                        (0, 0),
-                        (-1, -1),
-                        6
-                    ),
-
-                ]
-            )
-        )
-
-        elementos.append(
-            tabla
-        )
-
-    documento.build(
+    doc.build(
         elementos
     )
 
-    return salida.getvalue()
+    return buffer.getvalue()
 
 
 # ============================================================
-# INTERFAZ
+# GRÁFICOS SENCILLOS PARA LA APP
 # ============================================================
 
-st.title(
-    "🏀 Programador de Árbitros de Baloncesto"
-)
+def grafico_simple_barras(
+    serie,
+    titulo,
+    max_items=8
+):
 
-st.caption(
-    "Motor inteligente para la programación semanal "
-    "de árbitros de campo y oficiales de mesa."
-)
+    if serie is None or len(serie) == 0:
 
+        st.caption(
+            "Sin datos para mostrar."
+        )
+
+        return
+
+    serie = (
+        serie
+        .head(max_items)
+        .sort_values()
+    )
+
+    max_valor = max(
+        float(serie.max()),
+        1
+    )
+
+    st.markdown(
+        f"""
+        <div style="
+            font-size:14px;
+            font-weight:600;
+            color:#273746;
+            margin-bottom:8px;
+        ">
+        {titulo}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    for etiqueta, valor in serie.items():
+
+        porcentaje = (
+            float(valor)
+            / max_valor
+            * 100
+        )
+
+        st.markdown(
+            f"""
+            <div style="
+                margin-bottom:6px;
+                font-size:11px;
+                color:#333;
+            ">
+                <div style="
+                    display:flex;
+                    justify-content:space-between;
+                ">
+                    <span>{etiqueta}</span>
+                    <b>{int(valor)}</b>
+                </div>
+
+                <div style="
+                    background:#d9dde0;
+                    height:7px;
+                    border-radius:4px;
+                    margin-top:2px;
+                ">
+
+                    <div style="
+                        background:#273746;
+                        width:{porcentaje:.1f}%;
+                        height:7px;
+                        border-radius:4px;
+                    ">
+                    </div>
+
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+# ============================================================
+# INTERFAZ PRINCIPAL
+# ============================================================
+
+st.markdown(
+    """
+    <div class="app-header">
+
+        <h1>
+            🏀 Basketball Referees Scheduler
+        </h1>
+
+        <p>
+            Sistema inteligente de programación,
+            asignación y control de árbitros.
+        </p>
+
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 # ============================================================
 # SIDEBAR
@@ -2155,78 +2126,72 @@ st.caption(
 
 with st.sidebar:
 
-    st.header(
-        "📂 Base de datos"
+    st.markdown(
+        "## 🏀 Menú"
     )
 
     archivo = st.file_uploader(
-        "Cargar archivo Excel",
+        "Cargar base de datos",
         type=[
             "xlsx",
             "xls"
         ],
-        help=(
-            "El archivo debe contener las hojas: "
-            "Arbitros, Disponibilidad_Arbitros, "
-            "Config_Eventos y Programacion_Partidos."
-        )
+        key="excel_upload"
     )
 
-    st.divider()
-
-    st.subheader(
-        "📌 Módulos"
-    )
+    st.markdown("---")
 
     modulo = st.radio(
-        "Seleccionar módulo",
+        "Módulos",
         [
-            "Resumen",
-            "Programación",
-            "Asignaciones",
-            "Alertas",
-            "Árbitros",
-            "Partidos",
-            "Configuración"
+            "📊 Resumen",
+            "📅 Programación",
+            "👨‍⚖️ Árbitros",
+            "🚨 Alertas",
+            "📈 Estadísticas",
+            "📥 Descargas"
         ],
-        label_visibility="collapsed"
+        index=0
     )
 
-    st.divider()
+    st.markdown("---")
 
     st.caption(
-        "🏀 Motor de asignación"
+        "Sistema de asignación automática"
     )
 
     st.caption(
-        "Versión optimizada"
+        "Baloncesto · Análisis de datos"
     )
 
 
 # ============================================================
-# SIN ARCHIVO
+# VALIDAR ARCHIVO
 # ============================================================
 
 if archivo is None:
 
     st.info(
-        "👈 Carga el archivo Excel desde la barra lateral "
-        "para ejecutar automáticamente la programación."
+        "👈 Carga el archivo Excel normalizado "
+        "desde la barra lateral para iniciar "
+        "el procesamiento automático."
     )
 
     st.markdown(
         """
-        ### 📋 Estructura esperada
+        ### Estructura esperada
 
-        El archivo debe contener cuatro hojas:
+        El archivo debe contener las hojas:
 
-        1. **Arbitros**
-        2. **Disponibilidad_Arbitros**
-        3. **Config_Eventos**
-        4. **Programacion_Partidos**
+        - `Arbitros`
+        - `Disponibilidad_Arbitros`
+        - `Config_Eventos`
+        - `Programacion_Partidos`
 
-        Una vez cargado el archivo, el sistema realizará
-        automáticamente los cruces y generará la programación.
+        Una vez cargado el archivo, la aplicación
+        realizará automáticamente:
+
+        **Carga → Validación → Cruce → Asignación → Alertas → Informes**
         """
     )
 
@@ -2234,16 +2199,16 @@ if archivo is None:
 
 
 # ============================================================
-# PROCESAMIENTO AUTOMÁTICO
+# PROCESAMIENTO
 # ============================================================
 
 try:
 
     with st.spinner(
-        "Leyendo base y calculando programación..."
+        "Procesando base de datos..."
     ):
 
-        datos = cargar_excel(
+        datos = cargar_excel_archivo(
             archivo
         )
 
@@ -2253,18 +2218,11 @@ try:
             )
         )
 
-        partidos = preparar_partidos(
-            datos
-        )
-
-    st.success(
-        "✅ Base cargada y programación calculada correctamente."
-    )
-
 except Exception as error:
 
     st.error(
-        "❌ Se produjo un error al procesar el archivo."
+        "❌ Se produjo un error al procesar "
+        "el archivo."
     )
 
     st.exception(
@@ -2275,291 +2233,221 @@ except Exception as error:
 
 
 # ============================================================
+# MÉTRICAS
+# ============================================================
+
+total_arbitros = len(
+    datos[
+        "arbitros"
+    ]
+)
+
+total_partidos = len(
+    datos[
+        "programacion_partidos"
+    ]
+)
+
+total_asignaciones = len(
+    asignaciones
+)
+
+total_alertas = len(
+    alertas
+)
+
+alertas_criticas = 0
+
+alertas_medias = 0
+
+if not alertas.empty:
+
+    alertas_criticas = len(
+        alertas[
+            alertas[
+                "severidad"
+            ] == "CRÍTICA"
+        ]
+    )
+
+    alertas_medias = len(
+        alertas[
+            alertas[
+                "severidad"
+            ] == "MEDIA"
+        ]
+    )
+
+
+# ============================================================
 # RESUMEN
 # ============================================================
 
-if modulo == "Resumen":
+if modulo == "📊 Resumen":
 
-    st.subheader(
-        "📊 Resumen ejecutivo"
+    st.markdown(
+        '<div class="section-title">'
+        'Resumen ejecutivo'
+        '</div>',
+        unsafe_allow_html=True
     )
 
-    criticas = 0
-    medias = 0
-    bajas = 0
+    c1, c2, c3, c4, c5 = st.columns(5)
 
-    if not alertas.empty:
+    with c1:
 
-        criticas = int(
-            (
-                alertas[
-                    "severidad"
-                ]
-                ==
-                "CRÍTICA"
-            ).sum()
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">
+                    Árbitros
+                </div>
+                <div class="kpi-value">
+                    {total_arbitros}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-        medias = int(
-            (
-                alertas[
-                    "severidad"
-                ]
-                ==
-                "MEDIA"
-            ).sum()
+    with c2:
+
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">
+                    Partidos
+                </div>
+                <div class="kpi-value">
+                    {total_partidos}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-        bajas = int(
-            (
-                alertas[
-                    "severidad"
-                ]
-                ==
-                "BAJA"
-            ).sum()
+    with c3:
+
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">
+                    Asignaciones
+                </div>
+                <div class="kpi-value">
+                    {total_asignaciones}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
-    c1, c2, c3, c4 = st.columns(4)
+    with c4:
 
-    c1.metric(
-        "🏀 Partidos",
-        len(partidos)
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">
+                    Alertas críticas
+                </div>
+                <div class="kpi-value">
+                    {alertas_criticas}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with c5:
+
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">
+                    Alertas medias
+                </div>
+                <div class="kpi-value">
+                    {alertas_medias}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.markdown(
+        "### Estado general"
     )
 
-    c2.metric(
-        "👨‍⚖️ Asignaciones",
-        len(asignaciones)
-    )
+    if total_alertas == 0:
 
-    c3.metric(
-        "🚨 Alertas",
-        len(alertas)
-    )
+        st.success(
+            "🟢 Programación generada sin alertas."
+        )
 
-    c4.metric(
-        "🔴 Críticas",
-        criticas
-    )
+    elif alertas_criticas > 0:
 
-    st.divider()
-
-    # ========================================================
-    # SEMÁFORO
-    # ========================================================
-
-    st.subheader(
-        "🚦 Estado de la programación"
-    )
-
-    if criticas == 0:
-
-        if medias == 0:
-
-            st.success(
-                "🟢 PROGRAMACIÓN ÓPTIMA — "
-                "No existen alertas críticas ni medias."
-            )
-
-        else:
-
-            st.warning(
-                f"🟠 PROGRAMACIÓN CON OBSERVACIONES — "
-                f"existen {medias} alertas de carga."
-            )
+        st.error(
+            f"🔴 Existen {alertas_criticas} "
+            "alertas críticas que requieren revisión."
+        )
 
     else:
 
-        st.error(
-            f"🔴 PROGRAMACIÓN CON ALERTAS CRÍTICAS — "
-            f"se requiere revisar {criticas} asignaciones."
+        st.warning(
+            f"🟡 Se generaron {total_alertas} "
+            "alertas durante la programación."
         )
 
-    # ========================================================
-    # GRÁFICOS
-    # ========================================================
+    # --------------------------------------------------------
+    # GRÁFICOS LIGEROS
+    # --------------------------------------------------------
 
     col1, col2 = st.columns(2)
 
     with col1:
 
-        st.subheader(
-            "🚨 Alertas por severidad"
-        )
-
-        datos_alertas = pd.Series(
-            {
-                "CRÍTICA":
-                    criticas,
-
-                "MEDIA":
-                    medias,
-
-                "BAJA":
-                    bajas
-            },
-            name="Cantidad"
-        )
-
-        st.bar_chart(
-            datos_alertas
-        )
-
-    with col2:
-
-        st.subheader(
-            "👨‍⚖️ Asignaciones por función"
-        )
-
         if not asignaciones.empty:
 
-            datos_funciones = (
+            serie = (
                 asignaciones[
                     "funcion_asignada"
                 ]
                 .value_counts()
             )
 
-            st.bar_chart(
-                datos_funciones
+            grafico_simple_barras(
+                serie,
+                "Asignaciones por función"
             )
 
-        else:
+    with col2:
 
-            st.info(
-                "No existen asignaciones."
+        if not alertas.empty:
+
+            serie = (
+                alertas[
+                    "severidad"
+                ]
+                .value_counts()
             )
 
-    # ========================================================
-    # SUSTITUCIONES
-    # ========================================================
-
-    if not asignaciones.empty:
-
-        st.subheader(
-            "🔄 Sustituciones de categoría"
-        )
-
-        sustituciones = int(
-            (
-                asignaciones[
-                    "sustitucion_categoria"
-                ]
-                ==
-                "SI"
-            ).sum()
-        )
-
-        exactas = int(
-            (
-                asignaciones[
-                    "sustitucion_categoria"
-                ]
-                ==
-                "NO"
-            ).sum()
-        )
-
-        c1, c2 = st.columns(2)
-
-        c1.metric(
-            "Categoría exacta",
-            exactas
-        )
-
-        c2.metric(
-            "Sustituciones superiores",
-            sustituciones
-        )
+            grafico_simple_barras(
+                serie,
+                "Alertas por severidad"
+            )
 
 
 # ============================================================
 # PROGRAMACIÓN
 # ============================================================
 
-elif modulo == "Programación":
+elif modulo == "📅 Programación":
 
-    st.subheader(
-        "📅 Programación semanal"
-    )
-
-    if asignaciones.empty:
-
-        st.warning(
-            "No se generaron asignaciones."
-        )
-
-    else:
-
-        columnas = [
-
-            "fecha",
-            "dia",
-            "hora_inicio",
-            "hora_fin",
-            "evento",
-            "escenario",
-            "rama",
-            "categoria",
-            "nombre_completo",
-            "funcion_asignada",
-            "categoria_requerida",
-            "categoria_utilizada",
-            "sustitucion_categoria"
-
-        ]
-
-        columnas = [
-            c
-            for c in columnas
-            if c in asignaciones.columns
-        ]
-
-        vista = asignaciones[
-            columnas
-        ].copy()
-
-        vista = vista.sort_values(
-            [
-                "fecha",
-                "hora_inicio",
-                "escenario"
-            ],
-            na_position="last"
-        )
-
-        st.dataframe(
-            vista,
-            use_container_width=True,
-            hide_index=True
-        )
-
-        st.download_button(
-            "⬇️ Descargar programación CSV",
-            exportar_csv(vista),
-            "programacion_semanal.csv",
-            "text/csv"
-        )
-
-        st.download_button(
-            "⬇️ Descargar programación XLSX",
-            exportar_xlsx(
-                vista,
-                "Programacion"
-            ),
-            "programacion_semanal.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-
-# ============================================================
-# ASIGNACIONES
-# ============================================================
-
-elif modulo == "Asignaciones":
-
-    st.subheader(
-        "👨‍⚖️ Detalle de asignaciones"
+    st.markdown(
+        '<div class="section-title">'
+        'Programación semanal'
+        '</div>',
+        unsafe_allow_html=True
     )
 
     if asignaciones.empty:
@@ -2570,73 +2458,72 @@ elif modulo == "Asignaciones":
 
     else:
 
-        funciones = sorted(
-            asignaciones[
-                "funcion_asignada"
-            ]
-            .dropna()
-            .unique()
-        )
+        columnas = [
+            "fecha",
+            "dia",
+            "hora_inicio",
+            "hora_fin",
+            "evento",
+            "escenario",
+            "rama",
+            "categoria_partido",
+            "nombre_completo",
+            "funcion_asignada",
+            "categoria_requerida",
+            "categoria_utilizada",
+            "sustitucion_categoria"
+        ]
 
-        filtro_funcion = st.multiselect(
-            "Filtrar función",
-            funciones
-        )
-
-        vista = (
-            asignaciones.copy()
-        )
-
-        if filtro_funcion:
-
-            vista = vista[
-                vista[
-                    "funcion_asignada"
-                ].isin(
-                    filtro_funcion
-                )
-            ]
+        columnas = [
+            c
+            for c in columnas
+            if c in asignaciones.columns
+        ]
 
         st.dataframe(
-            vista,
+            asignaciones[
+                columnas
+            ],
             use_container_width=True,
+            height=570,
             hide_index=True
         )
 
-        c1, c2 = st.columns(2)
 
-        with c1:
+# ============================================================
+# ÁRBITROS
+# ============================================================
 
-            st.download_button(
-                "⬇️ Descargar CSV",
-                exportar_csv(
-                    vista
-                ),
-                "asignaciones.csv",
-                "text/csv"
-            )
+elif modulo == "👨‍⚖️ Árbitros":
 
-        with c2:
+    st.markdown(
+        '<div class="section-title">'
+        'Base de árbitros'
+        '</div>',
+        unsafe_allow_html=True
+    )
 
-            st.download_button(
-                "⬇️ Descargar XLSX",
-                exportar_xlsx(
-                    vista,
-                    "Asignaciones"
-                ),
-                "asignaciones.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+    st.dataframe(
+        datos[
+            "arbitros"
+        ],
+        use_container_width=True,
+        height=550,
+        hide_index=True
+    )
 
 
 # ============================================================
 # ALERTAS
 # ============================================================
 
-elif modulo == "Alertas":
+elif modulo == "🚨 Alertas":
 
-    st.subheader(
-        "🚦 Alertas de programación"
+    st.markdown(
+        '<div class="section-title">'
+        'Centro de alertas'
+        '</div>',
+        unsafe_allow_html=True
     )
 
     if alertas.empty:
@@ -2647,105 +2534,34 @@ elif modulo == "Alertas":
 
     else:
 
-        criticas = int(
-            (
-                alertas[
-                    "severidad"
-                ]
-                ==
-                "CRÍTICA"
-            ).sum()
-        )
-
-        medias = int(
-            (
-                alertas[
-                    "severidad"
-                ]
-                ==
-                "MEDIA"
-            ).sum()
-        )
-
-        bajas = int(
-            (
-                alertas[
-                    "severidad"
-                ]
-                ==
-                "BAJA"
-            ).sum()
-        )
-
         c1, c2, c3 = st.columns(3)
 
-        c1.metric(
-            "🔴 Críticas",
-            criticas
-        )
+        with c1:
 
-        c2.metric(
-            "🟠 Medias",
-            medias
-        )
-
-        c3.metric(
-            "🟢 Bajas",
-            bajas
-        )
-
-        st.bar_chart(
-            pd.Series(
-                {
-                    "CRÍTICA":
-                        criticas,
-
-                    "MEDIA":
-                        medias,
-
-                    "BAJA":
-                        bajas
-                },
-                name="Alertas"
-            )
-        )
-
-        # ----------------------------------------------------
-        # Filtro
-        # ----------------------------------------------------
-
-        severidades = st.multiselect(
-            "Filtrar severidad",
-            [
-                "CRÍTICA",
-                "MEDIA",
-                "BAJA"
-            ]
-        )
-
-        vista_alertas = (
-            alertas.copy()
-        )
-
-        if severidades:
-
-            vista_alertas = (
-                vista_alertas[
-                    vista_alertas[
-                        "severidad"
-                    ].isin(
-                        severidades
-                    )
-                ]
+            st.metric(
+                "Total",
+                total_alertas
             )
 
-        # ----------------------------------------------------
-        # Mostrar alertas visualmente
-        # ----------------------------------------------------
+        with c2:
 
-        for _, alerta in (
-            vista_alertas.iterrows()
-        ):
+            st.metric(
+                "Críticas",
+                alertas_criticas
+            )
+
+        with c3:
+
+            st.metric(
+                "Medias",
+                alertas_medias
+            )
+
+        st.markdown(
+            "### Detalle"
+        )
+
+        for _, alerta in alertas.iterrows():
 
             severidad = alerta.get(
                 "severidad",
@@ -2754,311 +2570,252 @@ elif modulo == "Alertas":
 
             if severidad == "CRÍTICA":
 
-                st.error(
-                    f"🔴 **{alerta.get('tipo')}** — "
-                    f"Partido {alerta.get('id_partido')} | "
-                    f"{alerta.get('fecha')} | "
-                    f"{alerta.get('hora')}  \n"
-                    f"{alerta.get('mensaje')}"
+                clase = (
+                    "alert-critical"
                 )
+
+                icono = "🔴"
 
             elif severidad == "MEDIA":
 
-                st.warning(
-                    f"🟠 **{alerta.get('tipo')}** — "
-                    f"Partido {alerta.get('id_partido')} | "
-                    f"{alerta.get('fecha')} | "
-                    f"{alerta.get('hora')}  \n"
-                    f"{alerta.get('mensaje')}"
+                clase = (
+                    "alert-medium"
                 )
+
+                icono = "🟡"
 
             else:
 
-                st.info(
-                    f"🟢 **{alerta.get('tipo')}** — "
-                    f"{alerta.get('mensaje')}"
+                clase = (
+                    "alert-low"
                 )
 
-        st.subheader(
-            "📋 Tabla completa de alertas"
-        )
+                icono = "🟢"
 
-        st.dataframe(
-            vista_alertas,
-            use_container_width=True,
-            hide_index=True
-        )
+            st.markdown(
+                f"""
+                <div class="{clase}">
 
-        c1, c2 = st.columns(2)
+                    <b>
+                        {icono}
+                        {severidad}
+                    </b>
 
-        with c1:
+                    <br>
 
-            st.download_button(
-                "⬇️ Alertas CSV",
-                exportar_csv(
-                    vista_alertas
-                ),
-                "alertas.csv",
-                "text/csv"
+                    Partido:
+                    {alerta.get("id_partido", "")}
+
+                    <br>
+
+                    Fecha:
+                    {alerta.get("fecha", "")}
+
+                    <br>
+
+                    Tipo:
+                    {alerta.get("tipo", "")}
+
+                    <br>
+
+                    {alerta.get("mensaje", "")}
+
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
-        with c2:
-
-            st.download_button(
-                "⬇️ Alertas XLSX",
-                exportar_xlsx(
-                    vista_alertas,
-                    "Alertas"
-                ),
-                "alertas.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
 
 # ============================================================
-# ÁRBITROS
+# ESTADÍSTICAS
 # ============================================================
 
-elif modulo == "Árbitros":
-
-    st.subheader(
-        "👤 Base de árbitros"
-    )
-
-    arbitros = datos[
-        "arbitros"
-    ].copy()
-
-    st.metric(
-        "Total de árbitros",
-        len(arbitros)
-    )
-
-    st.dataframe(
-        arbitros,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.download_button(
-        "⬇️ Descargar árbitros XLSX",
-        exportar_xlsx(
-            arbitros,
-            "Arbitros"
-        ),
-        "arbitros.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-
-# ============================================================
-# PARTIDOS
-# ============================================================
-
-elif modulo == "Partidos":
-
-    st.subheader(
-        "🏀 Partidos programados"
-    )
-
-    vista_partidos = (
-        partidos.copy()
-    )
-
-    vista_partidos = (
-        vista_partidos.drop(
-            columns=[
-                "fecha_dt",
-                "inicio_min",
-                "fin_min"
-            ],
-            errors="ignore"
-        )
-    )
-
-    st.metric(
-        "Total de partidos",
-        len(vista_partidos)
-    )
-
-    st.dataframe(
-        vista_partidos,
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.download_button(
-        "⬇️ Descargar partidos XLSX",
-        exportar_xlsx(
-            vista_partidos,
-            "Partidos"
-        ),
-        "partidos.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-
-# ============================================================
-# CONFIGURACIÓN
-# ============================================================
-
-elif modulo == "Configuración":
-
-    st.subheader(
-        "⚙️ Configuración y reglas del motor"
-    )
+elif modulo == "📈 Estadísticas":
 
     st.markdown(
-        f"""
-        ### Reglas principales
-
-        - 🏀 Máximo recomendado de **{MAX_CAMPO_DIA} partidos de campo diarios**.
-        - 📅 Máximo de **{MAX_CAMPO_SEMANA} partidos de campo semanales**.
-        - 🔄 Se permite sustitución por una categoría superior.
-        - 🤝 Un árbitro híbrido puede actuar como campo o mesa.
-        - 🚫 Un híbrido no puede realizar ambas funciones en el mismo partido.
-        - 🔁 Se permiten partidos consecutivos en el mismo escenario.
-        - 🚗 No se permite cambiar de escenario entre partidos consecutivos sin tiempo de desplazamiento.
-        - ⚖️ Se busca equilibrar la carga entre árbitros.
-        - 🚨 Cuando no existe personal disponible se genera una alerta crítica.
-        - 🟠 Cuando se supera la carga diaria recomendada se genera una alerta de carga.
-        """
+        '<div class="section-title">'
+        'Estadísticas de asignación'
+        '</div>',
+        unsafe_allow_html=True
     )
 
-    st.divider()
+    if asignaciones.empty:
 
-    st.subheader(
-        "📚 Hojas cargadas"
-    )
-
-    for nombre, df in datos.items():
-
-        st.write(
-            f"**{nombre}** → {len(df)} registros"
-        )
-
-
-# ============================================================
-# EXPORTACIONES GENERALES
-# ============================================================
-
-st.divider()
-
-st.subheader(
-    "📥 Informes y exportaciones"
-)
-
-col1, col2, col3, col4 = st.columns(4)
-
-# ------------------------------------------------------------
-# CSV
-# ------------------------------------------------------------
-
-with col1:
-
-    st.download_button(
-        "CSV programación",
-        exportar_csv(
-            asignaciones
-        ),
-        "programacion_semanal.csv",
-        "text/csv"
-    )
-
-
-# ------------------------------------------------------------
-# XLSX
-# ------------------------------------------------------------
-
-with col2:
-
-    st.download_button(
-        "XLSX programación",
-        exportar_xlsx(
-            asignaciones,
-            "Programacion"
-        ),
-        "programacion_semanal.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-
-# ------------------------------------------------------------
-# PDF RESUMEN
-# ------------------------------------------------------------
-
-with col3:
-
-    pdf_resumen = generar_pdf(
-        asignaciones,
-        alertas,
-        partidos,
-        tipo="resumen"
-    )
-
-    if pdf_resumen:
-
-        st.download_button(
-            "📄 Resumen ejecutivo PDF",
-            pdf_resumen,
-            "resumen_ejecutivo.pdf",
-            "application/pdf"
+        st.info(
+            "No existen asignaciones."
         )
 
     else:
 
-        st.caption(
-            "PDF requiere reportlab."
+        campo = asignaciones[
+            asignaciones[
+                "funcion_asignada"
+            ] == "CAMPO"
+        ]
+
+        mesa = asignaciones[
+            asignaciones[
+                "funcion_asignada"
+            ] == "MESA"
+        ]
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            grafico_simple_barras(
+                campo[
+                    "nombre_completo"
+                ].value_counts(),
+                "Carga de campo por árbitro",
+                max_items=10
+            )
+
+        with col2:
+
+            grafico_simple_barras(
+                mesa[
+                    "nombre_completo"
+                ].value_counts(),
+                "Carga de mesa por oficial",
+                max_items=10
+            )
+
+        st.markdown(
+            "### Sustituciones de categoría"
         )
 
+        sustituciones = (
+            asignaciones[
+                asignaciones[
+                    "sustitucion_categoria"
+                ] == "SI"
+            ]
+        )
 
-# ------------------------------------------------------------
-# PDF PROGRAMACIÓN
-# ------------------------------------------------------------
+        if sustituciones.empty:
 
-with col4:
+            st.success(
+                "No fue necesario utilizar "
+                sustituciones de categoría superior."
+            )
 
-    pdf_programacion = generar_pdf(
-        asignaciones,
-        alertas,
-        partidos,
-        tipo="programacion"
+        else:
+
+            st.warning(
+                f"Se realizaron "
+                f"{len(sustituciones)} "
+                "sustituciones de categoría superior."
+            )
+
+            st.dataframe(
+                sustituciones,
+                use_container_width=True,
+                hide_index=True
+            )
+
+
+# ============================================================
+# DESCARGAS
+# ============================================================
+
+elif modulo == "📥 Descargas":
+
+    st.markdown(
+        '<div class="section-title">'
+        'Centro de descargas'
+        '</div>',
+        unsafe_allow_html=True
     )
 
-    if pdf_programacion:
+    st.write(
+        "Todos los informes se generan automáticamente "
+        "a partir de la programación calculada."
+    )
 
-        st.download_button(
-            "📄 Informe programación PDF",
-            pdf_programacion,
-            "informe_programacion.pdf",
-            "application/pdf"
-        )
+    # --------------------------------------------------------
+    # EXCEL
+    # --------------------------------------------------------
 
-    else:
-
-        st.caption(
-            "PDF requiere reportlab."
-        )
-
-
-# ============================================================
-# PDF ALERTAS
-# ============================================================
-
-pdf_alertas = generar_pdf(
-    asignaciones,
-    alertas,
-    partidos,
-    tipo="alertas"
-)
-
-if pdf_alertas:
+    excel_bytes = generar_excel(
+        datos,
+        asignaciones,
+        alertas
+    )
 
     st.download_button(
-        "🚦 Descargar informe de alertas PDF",
-        pdf_alertas,
-        "informe_alertas.pdf",
-        "application/pdf"
+        label="📊 Descargar Excel completo",
+        data=excel_bytes,
+        file_name=(
+            "programacion_arbitros.xlsx"
+        ),
+        mime=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        use_container_width=True
+    )
+
+    # --------------------------------------------------------
+    # ASIGNACIONES CSV
+    # --------------------------------------------------------
+
+    if not asignaciones.empty:
+
+        st.download_button(
+            label="📄 Descargar asignaciones CSV",
+            data=generar_csv(
+                asignaciones
+            ),
+            file_name=(
+                "asignaciones_arbitros.csv"
+            ),
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    # --------------------------------------------------------
+    # ALERTAS CSV
+    # --------------------------------------------------------
+
+    if not alertas.empty:
+
+        st.download_button(
+            label="🚨 Descargar alertas CSV",
+            data=generar_csv(
+                alertas
+            ),
+            file_name=(
+                "alertas_programacion.csv"
+            ),
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    # --------------------------------------------------------
+    # PDF EJECUTIVO
+    # --------------------------------------------------------
+
+    pdf_bytes = generar_pdf_resumen(
+        datos,
+        asignaciones,
+        alertas
+    )
+
+    st.download_button(
+        label="📕 Descargar informe PDF",
+        data=pdf_bytes,
+        file_name=(
+            "informe_programacion_arbitros.pdf"
+        ),
+        mime="application/pdf",
+        use_container_width=True
+    )
+
+    st.success(
+        "Los informes PDF incluyen gráficos "
+        "profesionales que no se renderizan "
+        "permanentemente en la interfaz."
     )
 
 
@@ -3066,7 +2823,19 @@ if pdf_alertas:
 # PIE
 # ============================================================
 
-st.caption(
-    "🏀 Programador de Árbitros de Baloncesto | "
-    "Análisis de Datos + Motor de Asignación"
+st.markdown(
+    """
+    <div style="
+        margin-top:30px;
+        padding:12px;
+        text-align:center;
+        color:#7f8c8d;
+        font-size:11px;
+        border-top:1px solid #dfe4e8;
+    ">
+        Basketball Referees Scheduler ·
+        Sistema de programación y análisis de árbitros
+    </div>
+    """,
+    unsafe_allow_html=True
 )
