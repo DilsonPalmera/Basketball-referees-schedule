@@ -2697,7 +2697,7 @@ elif modulo == "📈 Estadísticas":
 
             st.success(
                 "No fue necesario utilizar "
-                sustituciones de categoría superior."
+                "sustituciones de categoría superior."
             )
 
         else:
